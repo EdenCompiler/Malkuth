@@ -1,5 +1,17 @@
 # Histórico de alterações
 
+## 0.5.0 — Linha de base, histórico e regressões
+
+- Persistência segura de instantâneos estruturais e histórico rotativo.
+- Linha de base interativa capturada por `B`.
+- Painel de evolução por `T` com saúde, ciclos, avisos e risco.
+- Filtro `6` e marcação visual de pacotes alterados.
+- Exportação de comparação em Markdown e JSON por `Y`.
+- Tabelas CSV de pacotes e dependências no pacote completo.
+- Políticas de CI para ciclos novos, regressão de saúde e aumentos de risco.
+- API pública `malkuth.history` e `compare-architectures`.
+- Testes de round-trip, comparação, CSV e artefatos de regressão.
+
 ## 0.4.1 — Busca textual de pacotes
 
 - Caixa de busca sempre visível, ativada por clique, `/` ou `Ctrl+F`.

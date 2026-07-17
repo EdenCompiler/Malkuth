@@ -281,3 +281,90 @@
      :function-delta (- (snapshot-total-functions new) (snapshot-total-functions old))
      :macro-delta (- (snapshot-total-macros new) (snapshot-total-macros old))
      :class-delta (- (snapshot-total-classes new) (snapshot-total-classes old)))))
+
+;;;; Comparação arquitetural entre uma linha de base e o estado corrente
+
+(defstruct risk-change
+  (name "" :type string)
+  (old-risk 0 :type fixnum)
+  (new-risk 0 :type fixnum)
+  (delta 0 :type integer))
+
+(defstruct architecture-diff
+  snapshot-diff
+  (health-delta 0 :type integer)
+  (warning-delta 0 :type integer)
+  (new-cycles nil :type list)
+  (resolved-cycles nil :type list)
+  (risk-increases nil :type list)
+  (risk-decreases nil :type list))
+
+(defun metric-table (report)
+  "Cria um índice por nome para comparar risco entre dois relatórios."
+  (let ((table (make-hash-table :test #'equal)))
+    (loop for metric across (analysis-report-metrics report)
+          do (setf (gethash (node-metrics-name metric) table) metric))
+    table))
+
+(defun sorted-cycle-copy (cycles)
+  "Normaliza ciclos para comparações independentes da ordem das listas."
+  (sort (mapcar (lambda (cycle) (sort (copy-list cycle) #'string<)) cycles)
+        #'string< :key (lambda (cycle) (format nil "~{~A~^|~}" cycle))))
+
+(defun compare-architectures (old-snapshot new-snapshot
+                              &key old-analysis new-analysis)
+  "Compara estrutura, saúde, ciclos e risco local entre dois instantâneos."
+  (let* ((old-analysis (or old-analysis (analyze-snapshot old-snapshot)))
+         (new-analysis (or new-analysis (analyze-snapshot new-snapshot)))
+         (old-cycles (sorted-cycle-copy (analysis-report-cycles old-analysis)))
+         (new-cycles (sorted-cycle-copy (analysis-report-cycles new-analysis)))
+         (old-table (metric-table old-analysis))
+         (new-table (metric-table new-analysis))
+         (increases '())
+         (decreases '()))
+    (maphash
+     (lambda (name new-metric)
+       (let ((old-metric (gethash name old-table)))
+         (when old-metric
+           (let* ((old-risk (node-metrics-risk-score old-metric))
+                  (new-risk (node-metrics-risk-score new-metric))
+                  (delta (- new-risk old-risk)))
+             (cond
+               ((plusp delta)
+                (push (make-risk-change :name name :old-risk old-risk
+                                        :new-risk new-risk :delta delta)
+                      increases))
+               ((minusp delta)
+                (push (make-risk-change :name name :old-risk old-risk
+                                        :new-risk new-risk :delta delta)
+                      decreases)))))))
+     new-table)
+    (flet ((risk-order (left right)
+             (if (= (abs (risk-change-delta left))
+                    (abs (risk-change-delta right)))
+                 (string< (risk-change-name left) (risk-change-name right))
+                 (> (abs (risk-change-delta left))
+                    (abs (risk-change-delta right))))))
+      (make-architecture-diff
+       :snapshot-diff (compare-snapshots old-snapshot new-snapshot)
+       :health-delta (- (analysis-report-health-score new-analysis)
+                        (analysis-report-health-score old-analysis))
+       :warning-delta (- (length (analysis-report-warnings new-analysis))
+                         (length (analysis-report-warnings old-analysis)))
+       :new-cycles (set-difference new-cycles old-cycles :test #'equal)
+       :resolved-cycles (set-difference old-cycles new-cycles :test #'equal)
+       :risk-increases (sort increases #'risk-order)
+       :risk-decreases (sort decreases #'risk-order)))))
+
+(defun architecture-diff-summary (diff)
+  "Resume DIFF em uma lista de propriedades adequada a logs e automação."
+  (let ((snapshot-diff (architecture-diff-snapshot-diff diff)))
+    (list :health-delta (architecture-diff-health-delta diff)
+          :warning-delta (architecture-diff-warning-delta diff)
+          :added-packages (length (snapshot-diff-added-packages snapshot-diff))
+          :removed-packages (length (snapshot-diff-removed-packages snapshot-diff))
+          :changed-packages (length (snapshot-diff-changed-packages snapshot-diff))
+          :new-cycles (length (architecture-diff-new-cycles diff))
+          :resolved-cycles (length (architecture-diff-resolved-cycles diff))
+          :risk-increases (length (architecture-diff-risk-increases diff))
+          :risk-decreases (length (architecture-diff-risk-decreases diff)))))

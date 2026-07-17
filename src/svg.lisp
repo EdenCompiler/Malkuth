@@ -124,7 +124,7 @@
 
       ;; Cabeçalho.
       (emit-text out 26 39 "MALKUTH" :size 34 :fill "#7cffcf" :weight 820)
-      (emit-text out 27 67 "0.4.1 / OBSERVATÓRIO DA ARQUITETURA DA IMAGEM" :size 14 :fill "#8198b8" :weight 650)
+      (emit-text out 27 67 "0.5.0 / OBSERVATÓRIO DA ARQUITETURA DA IMAGEM" :size 14 :fill "#8198b8" :weight 650)
       (let ((implementation (fit-svg-text
                              (format nil "~A ~A" (lisp-implementation-type)
                                      (lisp-implementation-version))

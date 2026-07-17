@@ -66,11 +66,27 @@
            (analysis (malkuth.analysis:analyze-snapshot snapshot))
            (output (pathname (or (env-value "MALKUTH_OUTPUT_DIR")
                                  (namestring (merge-pathnames "output/report/"
-                                                              (project-root)))))))
+                                                              (project-root))))))
+           (baseline-path (let ((value (env-value "MALKUTH_BASELINE_FILE")))
+                            (and value (pathname value))))
+           (baseline-snapshot (and baseline-path (probe-file baseline-path)
+                                   (malkuth.history:load-snapshot-file baseline-path)))
+           (baseline-analysis (and baseline-snapshot
+                                   (malkuth.analysis:analyze-snapshot baseline-snapshot)))
+           (architecture-diff (and baseline-snapshot
+                                   (malkuth.analysis:compare-architectures
+                                    baseline-snapshot snapshot
+                                    :old-analysis baseline-analysis
+                                    :new-analysis analysis))))
       (when (zerop (length (malkuth.model:snapshot-nodes snapshot)))
         (error "O escopo de pacotes configurado não correspondeu a nenhum pacote carregado."))
       (malkuth.model:validate-snapshot snapshot :errorp t)
       (malkuth.export:export-bundle snapshot output :analysis analysis)
+      (when architecture-diff
+        (malkuth.export:export-comparison-bundle
+         baseline-snapshot snapshot output
+         :old-analysis baseline-analysis :new-analysis analysis
+         :diff architecture-diff))
       (format t "~&Relatório do MALKUTH concluído.~%Instantâneo: ~S~%Análise: ~S~%Saída: ~A~%"
               (malkuth.model:snapshot-summary snapshot)
               (malkuth.analysis:analysis-summary analysis)
@@ -78,7 +94,11 @@
       ;; Políticas são opcionais. Valores negativos mantêm cada regra desativada.
       (let ((violations '())
             (minimum-health (env-integer "MALKUTH_MIN_HEALTH" -1))
-            (maximum-warnings (env-integer "MALKUTH_MAX_WARNINGS" -1)))
+            (maximum-warnings (env-integer "MALKUTH_MAX_WARNINGS" -1))
+            (maximum-health-regression
+              (env-integer "MALKUTH_MAX_HEALTH_REGRESSION" -1))
+            (maximum-risk-increases
+              (env-integer "MALKUTH_MAX_RISK_INCREASES" -1)))
         (when (and (>= minimum-health 0)
                    (< (malkuth.analysis:analysis-report-health-score analysis)
                       minimum-health))
@@ -98,9 +118,41 @@
                         (length (malkuth.analysis:analysis-report-warnings analysis))
                         maximum-warnings)
                 violations))
+        (when (and architecture-diff
+                   (env-boolean "MALKUTH_FAIL_ON_NEW_CYCLES" nil)
+                   (plusp (length
+                           (malkuth.analysis:architecture-diff-new-cycles
+                            architecture-diff))))
+          (push (format nil "~D novo(s) ciclo(s) surgiram desde a linha de base"
+                        (length
+                         (malkuth.analysis:architecture-diff-new-cycles
+                          architecture-diff)))
+                violations))
+        (when (and architecture-diff (>= maximum-health-regression 0)
+                   (< (malkuth.analysis:architecture-diff-health-delta architecture-diff)
+                      (- maximum-health-regression)))
+          (push (format nil "a saúde regrediu ~D ponto(s), acima do máximo de ~D"
+                        (- (malkuth.analysis:architecture-diff-health-delta architecture-diff))
+                        maximum-health-regression)
+                violations))
+        (when (and architecture-diff (>= maximum-risk-increases 0)
+                   (> (length
+                       (malkuth.analysis:architecture-diff-risk-increases
+                        architecture-diff))
+                      maximum-risk-increases))
+          (push (format nil "~D aumentos de risco excedem o máximo de ~D"
+                        (length
+                         (malkuth.analysis:architecture-diff-risk-increases
+                          architecture-diff))
+                        maximum-risk-increases)
+                violations))
         (when violations
           (format *error-output* "~&FALHA NA POLÍTICA DO MALKUTH:~%~{  - ~A~%~}" (nreverse violations))
-          (uiop:quit 2))))
+          (uiop:quit 2))
+        (when (and baseline-path (env-boolean "MALKUTH_UPDATE_BASELINE" nil))
+          (malkuth.history:save-snapshot-file
+           snapshot baseline-path :label "linha-de-base-ci")
+          (format t "Linha de base atualizada em ~A.~%" baseline-path))))
   (error (condition)
     (format *error-output* "~&FALHA NA ANÁLISE DO MALKUTH: ~A~%" condition)
     (uiop:quit 1)))

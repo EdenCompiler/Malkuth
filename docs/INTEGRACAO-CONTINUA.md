@@ -9,9 +9,9 @@ MALKUTH_OUTPUT_DIR="$PWD/build/malkuth/" \
 sbcl --script analyze.lisp
 ```
 
-Armazene o diretório de saída como artefato do job. Assim, uma falha arquitetural permanece explicável por SVG, Markdown e JSON.
+Armazene o diretório de saída como artefato do job. Ele contém SVG, Markdown, JSON, DOT, manifesto e tabelas CSV.
 
-## Políticas
+## Políticas absolutas
 
 ```bash
 MALKUTH_MIN_HEALTH=80
@@ -19,18 +19,51 @@ MALKUTH_FAIL_ON_CYCLES=true
 MALKUTH_MAX_WARNINGS=5
 ```
 
-A política é verificada depois da geração dos relatórios. Mesmo quando o código de saída é `2`, os artefatos devem estar disponíveis.
+Essas regras avaliam somente o estado corrente.
+
+## Linha de base e políticas de regressão
+
+Crie inicialmente uma linha de base versionada ou preservada como artefato:
+
+```bash
+MALKUTH_BASELINE_FILE="$PWD/build/malkuth-baseline.sexp" \
+MALKUTH_UPDATE_BASELINE=true \
+sbcl --script analyze.lisp
+```
+
+Depois compare cada execução:
+
+```bash
+MALKUTH_BASELINE_FILE="$PWD/build/malkuth-baseline.sexp" \
+MALKUTH_FAIL_ON_NEW_CYCLES=true \
+MALKUTH_MAX_HEALTH_REGRESSION=5 \
+MALKUTH_MAX_RISK_INCREASES=3 \
+sbcl --script analyze.lisp
+```
+
+Quando a base existe, o Malkuth também gera `malkuth-comparacao.md` e `malkuth-comparacao.json`.
+
+## Atualização controlada
+
+`MALKUTH_UPDATE_BASELINE=true` substitui o arquivo somente depois que todas as políticas foram aprovadas. Não o habilite permanentemente no mesmo job que deveria detectar regressões, pois isso aceitaria automaticamente o estado atual.
 
 ## Adoção gradual
 
 1. Execute sem políticas.
 2. Revise ciclos e avisos existentes.
-3. Diferencie decisões intencionais de dívida técnica.
-4. Armazene uma linha de base.
-5. Comece com limites permissivos.
-6. Aperte os limites somente quando houver processo de correção.
+3. Capture uma linha de base conhecida.
+4. Ative primeiro `MALKUTH_FAIL_ON_NEW_CYCLES`.
+5. Observe a variação de saúde em várias alterações.
+6. Defina limites de regressão compatíveis com o projeto.
+7. Atualize a base apenas em uma mudança arquitetural aprovada.
 
-Não use uma pontuação arbitrária para bloquear imediatamente um projeto maduro.
+## Códigos de saída
+
+- `0`: análise e políticas aprovadas;
+- `1`: falha operacional, configuração inválida ou arquivo de base corrompido;
+- `2`: política arquitetural violada.
+
+Os relatórios são gerados antes da verificação das políticas para facilitar diagnóstico de falhas.
 
 ## Exemplo de job genérico
 
@@ -40,21 +73,14 @@ set -eu
 export MALKUTH_SCOPE_PREFIXES='ACME.APP'
 export MALKUTH_USER_PREFIXES='ACME.APP'
 export MALKUTH_OUTPUT_DIR="$PWD/build/malkuth/"
+export MALKUTH_BASELINE_FILE="$PWD/ci/malkuth-baseline.sexp"
 export MALKUTH_MIN_HEALTH=75
-export MALKUTH_FAIL_ON_CYCLES=true
+export MALKUTH_FAIL_ON_NEW_CYCLES=true
+export MALKUTH_MAX_HEALTH_REGRESSION=4
 
 sbcl --script analyze.lisp
 ```
 
-## Comparação histórica
-
-O Malkuth não mantém histórico automaticamente. Para acompanhar evolução:
-
-- arquive `malkuth.json` por compilação;
-- registre a impressão digital;
-- compare contagens, ciclos e avisos;
-- gere tendências em ferramenta externa.
-
 ## Privacidade
 
-Relatórios contêm nomes de pacotes e símbolos. Trate-os como documentação de código-fonte e aplique escopo antes de publicá-los.
+Relatórios e linhas de base contêm nomes de pacotes e símbolos. Trate-os como documentação de código-fonte e aplique escopo antes de publicá-los.

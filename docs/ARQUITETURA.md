@@ -10,13 +10,15 @@ imagem Common Lisp
         ▼
 malkuth.model ── validação e impressão digital
         │
-        ├────────► malkuth.analysis ── métricas, ciclos, saúde e diferenças
+        ├────────► malkuth.analysis ── métricas, ciclos, saúde e regressões
+        │
+        ├────────► malkuth.history ── linha de base e histórico seguro
         │
         ├────────► malkuth.layout ── posições 3D e projeção
         │
         ├────────► malkuth.svg ── documento visual
         │
-        └────────► malkuth.export ── JSON, DOT, Markdown e manifesto
+        └────────► malkuth.export ── JSON, DOT, Markdown, CSV e manifesto
                               │
                               ├── analyze.lisp
                               └── malkuth.app + SDL3
@@ -50,9 +52,16 @@ Calcula:
 - pacotes isolados;
 - avisos heurísticos;
 - pontuação de saúde;
-- diferenças entre dois instantâneos.
+- diferenças entre dois instantâneos;
+- comparação arquitetural com saúde, ciclos e variações de risco.
 
 Os avisos e a saúde podem ser restritos por tipo de nó. Em execuções com prefixos de usuário, bibliotecas e implementação não dominam a pontuação do projeto.
+
+## `malkuth.history`
+
+Serializa somente a estrutura necessária para análise histórica: nomes, tipos, contagens, arestas, metadados e totais. Referências a objetos `PACKAGE`, posições gráficas e estado executável não são persistidos.
+
+A leitura desativa `*READ-EVAL*`, verifica a versão do formato, exige identificadores densos e executa `validate-snapshot`. O histórico rotativo remove arquivos antigos depois de uma gravação bem-sucedida.
 
 ## `malkuth.layout`
 
@@ -81,11 +90,11 @@ O SVG usa texto nativo do navegador e recorte do painel central para evitar inva
 
 ## `malkuth.export`
 
-Centraliza formatos de máquina e documentação. Além do pacote global, gera dossiês Markdown e grafos DOT focados em um pacote e sua vizinhança direta. A gravação usa um arquivo temporário vizinho seguido de substituição atômica. Dessa forma, uma interrupção não deixa um relatório parcial com nome definitivo.
+Centraliza formatos de máquina e documentação. Além do pacote global, gera dossiês Markdown e grafos DOT focados, tabelas CSV e relatórios de comparação contra linha de base. A gravação usa um arquivo temporário vizinho seguido de substituição atômica. Dessa forma, uma interrupção não deixa um relatório parcial com nome definitivo.
 
 ## `malkuth.app`
 
-A interface mantém um estado explícito com instantâneo, análise, seleção, câmera, filtros, aba e deslocamento do inspetor, favoritos e status. Favoritos são persistidos por nome em uma S-expression lida com `*READ-EVAL*` desativado. A aplicação pode atualizar a imagem ativa, comparar instantâneos, isolar vizinhanças e exportar sem duplicar as regras do núcleo.
+A interface mantém um estado explícito com instantâneo, análise, linha de base, comparação, seleção, câmera, filtros, aba e deslocamento do inspetor, favoritos e status. Favoritos são persistidos por nome em uma S-expression lida com `*READ-EVAL*` desativado. A aplicação pode atualizar a imagem ativa, comparar instantâneos, isolar vizinhanças e exportar sem duplicar as regras do núcleo.
 
 ## `malkuth.sdl3`
 

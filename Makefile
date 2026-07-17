@@ -9,7 +9,7 @@ help:
 	  'make smoke     - executa um teste curto da interface SDL3' \
 	  'make validate  - executa test, analyze e smoke' \
 	  'make clean     - remove artefatos gerados' \
-	  'make package   - cria malkuth-0.4.1.zip'
+	  'make package   - cria malkuth-0.5.0.zip'
 
 run:
 	sbcl --script run.lisp
@@ -33,5 +33,5 @@ clean:
 	rm -rf output build
 
 package: clean
-	cd .. && zip -r malkuth-0.4.1.zip malkuth-0.4.1 \
-		-x 'malkuth-0.4.1/.git/*' 'malkuth-0.4.1/*.fasl' 'malkuth-0.4.1/*~'
+	cd .. && zip -r malkuth-0.5.0.zip malkuth-0.5.0 \
+		-x 'malkuth-0.5.0/.git/*' 'malkuth-0.5.0/*.fasl' 'malkuth-0.5.0/*~'

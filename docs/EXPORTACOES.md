@@ -10,7 +10,24 @@ malkuth.json
 malkuth.dot
 malkuth-report.md
 malkuth-manifest.txt
+malkuth-pacotes.csv
+malkuth-dependencias.csv
 ```
+
+## Comparação contra linha de base
+
+`Y` e `malkuth.export:export-comparison-bundle` produzem:
+
+```text
+malkuth-comparacao.md
+malkuth-comparacao.json
+```
+
+O relatório registra variação de saúde, pacotes adicionados/removidos/alterados, ciclos novos ou resolvidos e mudanças de risco.
+
+## CSV
+
+`malkuth-pacotes.csv` contém uma linha por pacote com contagens, fan-in, fan-out, grau e risco. `malkuth-dependencias.csv` contém origem, destino e peso de cada relação `USE-PACKAGE`. Ambos usam campos entre aspas e podem ser abertos em planilhas ou ferramentas de BI.
 
 ## Dossiê do pacote
 
@@ -51,6 +68,7 @@ Artefatos são escritos em arquivos temporários vizinhos e depois substituem o 
 
 ```lisp
 (malkuth.export:export-bundle instantaneo #P"build/malkuth/")
+(malkuth.export:export-csv-bundle instantaneo #P"build/malkuth/")
 (malkuth.export:export-package-bundle
  instantaneo pacote #P"build/malkuth/" :analysis analise)
 ```

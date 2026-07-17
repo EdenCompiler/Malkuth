@@ -4,13 +4,14 @@
   :description "Observatório da imagem Common Lisp e analisador de arquitetura orientado a uso em produção."
   :author "Bruno"
   :license "MIT"
-  :version "0.4.1"
+  :version "0.5.0"
   :in-order-to ((asdf:test-op (asdf:test-op "malkuth/tests")))
   :serial t
   :components ((:file "src/package")
                (:file "src/math")
                (:file "src/model")
                (:file "src/layout")
+               (:file "src/history")
                (:file "src/analysis")
                (:file "src/svg")
                (:file "src/export")))
@@ -19,7 +20,7 @@
   :description "Interface interativa SDL3 do Malkuth."
   :author "Bruno"
   :license "MIT"
-  :version "0.4.1"
+  :version "0.5.0"
   :in-order-to ((asdf:test-op (asdf:test-op "malkuth/tests")))
   :depends-on ("malkuth/core" "cffi")
   :serial t

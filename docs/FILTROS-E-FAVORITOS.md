@@ -41,3 +41,7 @@ MALKUTH_RISK_THRESHOLD=40 sbcl --script run.lisp
 ```
 
 Esse valor não modifica a pontuação global de saúde nem as regras do analisador; ele serve apenas para navegação visual.
+
+## Alterados desde a linha de base
+
+Pressione `6` para mostrar pacotes adicionados ou com contagens alteradas desde a linha de base. É necessário capturar a base com `B` ou possuir `malkuth-linha-de-base.sexp` no diretório de saída. Pacotes alterados recebem um anel magenta. Pacotes removidos aparecem no painel `T`, mas não podem ser desenhados porque já não existem no instantâneo atual.

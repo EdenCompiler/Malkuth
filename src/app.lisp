@@ -16,6 +16,11 @@
   snapshot
   analysis
   last-diff
+  baseline-snapshot
+  baseline-analysis
+  architecture-diff
+  (changes-p nil)
+  (history-retention 20 :type fixnum)
   (export-directory #P"output/" :type pathname)
   (include-empty-p nil)
   package-predicate
@@ -92,7 +97,8 @@
     (:project "PROJETO")
     (:risk "RISCO")
     (:favorites "FAVORITOS")
-    (:neighbors "VIZINHANÇA")))
+    (:neighbors "VIZINHANÇA")
+    (:changed "ALTERADOS")))
 
 (defun inspector-tab-name (tab)
   "Nome legível da aba ativa do inspetor."
@@ -177,6 +183,17 @@
   "Consulta a coleção persistente de pacotes favoritos pelo nome estável."
   (not (null (gethash (node-name node) (app-state-favorites state)))))
 
+(defun changed-package-p (state node)
+  "Informa se NODE foi adicionado ou alterado em relação à linha de base."
+  (let ((architecture-diff (app-state-architecture-diff state)))
+    (when architecture-diff
+      (let* ((diff (architecture-diff-snapshot-diff architecture-diff))
+             (name (node-name node)))
+        (or (member name (snapshot-diff-added-packages diff) :test #'string-equal)
+            (find name (snapshot-diff-changed-packages diff)
+                  :key #'malkuth.analysis:package-change-name
+                  :test #'string-equal))))))
+
 (defun display-node-p (state node)
   "Decide se NODE participa da visão atual.
 
@@ -193,7 +210,8 @@ perca o contexto ao alternar modos."
         (:neighbors (member (node-id node)
                             (node-neighbor-ids (app-state-snapshot state)
                                                (selected-node state))
-                            :test #'=)))))
+                            :test #'=))
+        (:changed (changed-package-p state node)))))
 
 (defun display-nodes (state)
   "Lista os nós aceitos pelo filtro atual em ordem de identificador."
@@ -426,6 +444,89 @@ perca o contexto ao alternar modos."
         (flash-status state (format nil "FAVORITO ALTERADO, MAS NÃO SALVO: ~A" condition) 5200)))
     (favorite-p state node)))
 
+(defun baseline-pathname (state)
+  "Caminho estável da linha de base usada nas comparações interativas."
+  (merge-pathnames "malkuth-linha-de-base.sexp"
+                   (uiop:ensure-directory-pathname
+                    (app-state-export-directory state))))
+
+(defun history-directory (state)
+  "Diretório reservado aos instantâneos rotativos da sessão."
+  (merge-pathnames "historico/"
+                   (uiop:ensure-directory-pathname
+                    (app-state-export-directory state))))
+
+(defun recompute-architecture-diff! (state)
+  "Recalcula a comparação contra a linha de base carregada, quando disponível."
+  (if (app-state-baseline-snapshot state)
+      (setf (app-state-architecture-diff state)
+            (compare-architectures
+             (app-state-baseline-snapshot state)
+             (app-state-snapshot state)
+             :old-analysis (app-state-baseline-analysis state)
+             :new-analysis (app-state-analysis state)))
+      (setf (app-state-architecture-diff state) nil)))
+
+(defun load-baseline! (state &key (announce nil))
+  "Carrega a linha de base persistida e atualiza a comparação corrente."
+  (let ((pathname (baseline-pathname state)))
+    (when (probe-file pathname)
+      (handler-case
+          (let* ((snapshot (load-snapshot-file pathname))
+                 (analysis (analyze-snapshot snapshot)))
+            (setf (app-state-baseline-snapshot state) snapshot
+                  (app-state-baseline-analysis state) analysis)
+            (recompute-architecture-diff! state)
+            (when announce
+              (flash-status state
+                            (format nil "LINHA DE BASE CARREGADA: ~A"
+                                    (snapshot-fingerprint snapshot))
+                            3600))
+            snapshot)
+        (error (condition)
+          (when announce
+            (flash-status state (format nil "FALHA AO LER LINHA DE BASE: ~A" condition)
+                          5200))
+          nil)))))
+
+(defun capture-baseline! (state)
+  "Persiste o estado atual como linha de base e inicia uma comparação limpa."
+  (let* ((snapshot (app-state-snapshot state))
+         (pathname (baseline-pathname state)))
+    (save-snapshot-file snapshot pathname :label "linha-de-base")
+    (save-history-snapshot snapshot (history-directory state)
+                           :retention (app-state-history-retention state)
+                           :label "linha-de-base")
+    ;; Recarregar pelo formato persistido testa a compatibilidade do arquivo e
+    ;; evita que a comparação dependa de objetos PACKAGE da imagem viva.
+    (setf (app-state-baseline-snapshot state) (load-snapshot-file pathname)
+          (app-state-baseline-analysis state) nil)
+    (setf (app-state-baseline-analysis state)
+          (analyze-snapshot (app-state-baseline-snapshot state)))
+    (recompute-architecture-diff! state)
+    (flash-status state
+                  (format nil "LINHA DE BASE CAPTURADA: ~A"
+                          (snapshot-fingerprint snapshot))
+                  4200)
+    pathname))
+
+(defun export-current-comparison! (state)
+  "Gera relatórios Markdown e JSON da comparação ativa."
+  (unless (app-state-baseline-snapshot state)
+    (error "Nenhuma linha de base foi capturada. Pressione B primeiro."))
+  (let ((paths (export-comparison-bundle
+                (app-state-baseline-snapshot state)
+                (app-state-snapshot state)
+                (app-state-export-directory state)
+                :old-analysis (app-state-baseline-analysis state)
+                :new-analysis (app-state-analysis state)
+                :diff (app-state-architecture-diff state))))
+    (flash-status state
+                  (format nil "COMPARAÇÃO EXPORTADA: ~A"
+                          (namestring (getf paths :markdown)))
+                  5200)
+    paths))
+
 (defun dependency-rows (state)
   "Monta as linhas da aba de dependências com direção explícita."
   (let* ((snapshot (app-state-snapshot state))
@@ -454,11 +555,17 @@ perca o contexto ao alternar modos."
 (defun refresh-image! (state)
   "Reconstrói a imagem ativa preservando pelo nome o pacote selecionado."
   (let* ((old (app-state-snapshot state))
+         (_history (ignore-errors
+                     (save-history-snapshot
+                      old (history-directory state)
+                      :retention (app-state-history-retention state)
+                      :label "antes-da-atualizacao")))
          (selected-name (node-name (selected-node state)))
          (fresh (build-snapshot :include-empty (app-state-include-empty-p state)
                                 :package-predicate (app-state-package-predicate state)
                                 :user-package-predicate (app-state-user-package-predicate state)
                                 :include-dependencies (app-state-include-dependencies-p state))))
+    (declare (ignore _history))
     (validate-snapshot fresh :errorp t)
     (when (zerop (length (snapshot-nodes fresh)))
       (error "A atualização produziu um instantâneo vazio; revise o escopo configurado."))
@@ -474,6 +581,7 @@ perca o contexto ao alternar modos."
             (app-state-last-diff state) diff
             (app-state-hover-index state) -1)
       (set-selected! state selected)
+      (recompute-architecture-diff! state)
       (when (plusp (length (app-state-search-query state)))
         (refresh-search-results! state :preserve-index t))
       (flash-status
@@ -502,10 +610,27 @@ perca o contexto ao alternar modos."
   (when (key-edge-p state malkuth.sdl3:+sc-h+)
     (setf (app-state-help-p state) (not (app-state-help-p state))))
   (when (key-edge-p state malkuth.sdl3:+sc-g+)
-    (setf (app-state-diagnostics-p state) (not (app-state-diagnostics-p state)))
+    (setf (app-state-diagnostics-p state) (not (app-state-diagnostics-p state))
+          (app-state-changes-p state) nil)
     (flash-status state (if (app-state-diagnostics-p state)
                             "DIAGNÓSTICOS DE ARQUITETURA ABERTOS"
                             "VISÃO GERAL DA IMAGEM ABERTA")))
+  (when (key-edge-p state malkuth.sdl3:+sc-t+)
+    (unless (app-state-baseline-snapshot state)
+      (load-baseline! state))
+    (if (app-state-baseline-snapshot state)
+        (progn
+          (setf (app-state-changes-p state) (not (app-state-changes-p state))
+                (app-state-diagnostics-p state) nil)
+          (flash-status state (if (app-state-changes-p state)
+                                  "COMPARAÇÃO COM A LINHA DE BASE ABERTA"
+                                  "VISÃO GERAL DA IMAGEM ABERTA")))
+        (flash-status state "NENHUMA LINHA DE BASE / PRESSIONE B PARA CAPTURAR" 4200)))
+  (when (key-edge-p state malkuth.sdl3:+sc-b+)
+    (handler-case (capture-baseline! state)
+      (error (condition)
+        (flash-status state (format nil "FALHA AO CAPTURAR LINHA DE BASE: ~A" condition)
+                      5200))))
   (when (key-edge-p state malkuth.sdl3:+sc-i+)
     (toggle-inspector-tab! state))
   (when (key-edge-p state malkuth.sdl3:+sc-v+)
@@ -518,6 +643,10 @@ perca o contexto ao alternar modos."
   (when (key-edge-p state malkuth.sdl3:+sc-3+) (set-view-filter! state :risk))
   (when (key-edge-p state malkuth.sdl3:+sc-4+) (set-view-filter! state :favorites))
   (when (key-edge-p state malkuth.sdl3:+sc-5+) (set-view-filter! state :neighbors))
+  (when (key-edge-p state malkuth.sdl3:+sc-6+)
+    (if (app-state-architecture-diff state)
+        (set-view-filter! state :changed)
+        (flash-status state "O FILTRO ALTERADOS EXIGE UMA LINHA DE BASE" 3600)))
   (when (key-edge-p state malkuth.sdl3:+sc-o+)
     (setf (app-state-auto-orbit-p state) (not (app-state-auto-orbit-p state)))
     (flash-status state (if (app-state-auto-orbit-p state)
@@ -563,6 +692,10 @@ perca o contexto ao alternar modos."
                         5200))
       (error (condition)
         (flash-status state (format nil "FALHA AO EXPORTAR O PACOTE: ~A" condition) 5200))))
+  (when (key-edge-p state malkuth.sdl3:+sc-y+)
+    (handler-case (export-current-comparison! state)
+      (error (condition)
+        (flash-status state (format nil "FALHA AO EXPORTAR COMPARAÇÃO: ~A" condition) 5200))))
   (when (key-edge-p state malkuth.sdl3:+sc-c+)
     (handler-case
         (let* ((paths (export-package-bundle
@@ -782,6 +915,7 @@ então solicita o encerramento da aplicação."
         (let* ((selected-p (eq node selected))
                (hovered-p (and hovered (eq node hovered)))
                (favorite (favorite-p state node))
+               (changed (changed-package-p state node))
                (radius (projected-radius node)))
           (when (or selected-p hovered-p)
             (loop for halo from (if selected-p 32 23) downto 13 by 4
@@ -789,6 +923,12 @@ então solicita o encerramento da aplicação."
                   do (malkuth.sdl3:set-color renderer r g b alpha)
                      (malkuth.sdl3:circle renderer (node-screen-x node)
                                           (node-screen-y node) halo :segments 28)))
+          ;; Pacotes alterados recebem um anel magenta; favoritos mantêm o anel
+          ;; dourado externo. As duas marcações podem coexistir.
+          (when changed
+            (malkuth.sdl3:set-color renderer 255 112 180 225)
+            (malkuth.sdl3:circle renderer (node-screen-x node)
+                                 (node-screen-y node) (+ radius 3.0d0) :segments 24))
           ;; Favoritos recebem um anel dourado discreto, visível em qualquer modo.
           (when favorite
             (malkuth.sdl3:set-color renderer 255 204 92 225)
@@ -803,7 +943,8 @@ então solicita o encerramento da aplicação."
           (malkuth.sdl3:set-color renderer r g b (if (or selected-p hovered-p) 255 225))
           (malkuth.sdl3:circle renderer (node-screen-x node)
                                (node-screen-y node) radius :segments 24)
-          (when (or selected-p hovered-p favorite (gethash (node-id node) label-ids))
+          (when (or selected-p hovered-p favorite changed
+                    (gethash (node-id node) label-ids))
             (let* ((scale (cond (selected-p 1.42d0) (hovered-p 1.25d0) (t 1.15d0)))
                    (screen-x (node-screen-x node))
                    (screen-y (node-screen-y node))
@@ -811,7 +952,10 @@ então solicita o encerramento da aplicação."
                    (left-room (max 0.0d0 (- screen-x graph-x radius 12.0d0)))
                    (draw-left-p (> left-room right-room))
                    (room (max 30.0d0 (min 260.0d0 (if draw-left-p left-room right-room))))
-                   (prefix (if favorite "FAV / " ""))
+                   (prefix (cond ((and favorite changed) "FAV + ALT / ")
+                                 (favorite "FAV / ")
+                                 (changed "ALT / ")
+                                 (t "")))
                    (label (fit-text (concatenate 'string prefix (node-name node)) room :scale scale))
                    (label-width (vector-text-width label :scale (readable-scale scale) :spacing 1.0))
                    (label-x (if draw-left-p
@@ -824,6 +968,7 @@ então solicita o encerramento da aplicação."
                     :color (cond (selected-p '(235 255 248 255))
                                  (hovered-p '(224 237 252 255))
                                  (favorite '(255 214 112 245))
+                                 (changed '(255 151 205 245))
                                  (t '(154 178 211 235)))))))))
     (draw-symbol-corona renderer state)))
 
@@ -895,10 +1040,10 @@ então solicita o encerramento da aplicação."
                            :color '(255 214 112 255)))
     (when (> h 715)
       (text renderer (+ x 20) (+ y 674)
-            (fit-text "1-5 FILTROS / V VIZINHANÇA" (- w 40) :scale 1.02)
+            (fit-text "1-6 FILTROS / B LINHA DE BASE" (- w 40) :scale 1.02)
             :scale 1.02 :color +accent+)
       (text renderer (+ x 20) (+ y 701)
-            (fit-text "F FAVORITO / I ALTERNA ABA" (- w 40) :scale 1.02)
+            (fit-text "T EVOLUÇÃO / Y EXPORTA COMPARAÇÃO" (- w 40) :scale 1.02)
             :scale 1.02 :color +accent+))))
 
 (defun draw-diagnostics-panel (renderer state x y w h)
@@ -955,11 +1100,105 @@ então solicita o encerramento da aplicação."
           (fit-text "F FAVORITO / I ALTERNA ABA" (- w 40) :scale 1.02)
           :scale 1.02 :color +accent+)))
 
+(defun delta-color (delta &key (positive-good t))
+  "Escolhe uma cor semântica para DELTA conforme a direção desejável."
+  (cond ((zerop delta) +text-muted+)
+        ((if positive-good (plusp delta) (minusp delta)) +accent+)
+        (t '(255 112 132 255))))
+
+(defun draw-changes-panel (renderer state x y w h)
+  "Resume a evolução da arquitetura em relação à linha de base persistida."
+  (let* ((diff (app-state-architecture-diff state))
+         (baseline (app-state-baseline-snapshot state)))
+    (text renderer (+ x 20) (+ y 18) "EVOLUÇÃO DA ARQUITETURA"
+          :scale 1.70 :color +text-primary+)
+    (text renderer (+ x 20) (+ y 49) "COMPARAÇÃO CONTRA A LINHA DE BASE"
+          :scale 1.10 :color +text-muted+)
+    (separator renderer (+ x 20) (+ y 77) (- (+ x w) 20))
+    (if (null diff)
+        (progn
+          (text renderer (+ x 20) (+ y 112)
+                "NENHUMA LINHA DE BASE DISPONÍVEL" :scale 1.20
+                :color '(255 202 92 255))
+          (text renderer (+ x 20) (+ y 151)
+                (fit-text "PRESSIONE B PARA CAPTURAR O ESTADO ATUAL"
+                          (- w 40) :scale 1.05)
+                :scale 1.05 :color +text-muted+))
+        (let* ((snapshot-diff (architecture-diff-snapshot-diff diff))
+               (health-delta (architecture-diff-health-delta diff))
+               (warning-delta (architecture-diff-warning-delta diff))
+               (risk-increases (architecture-diff-risk-increases diff)))
+          (text renderer (+ x 20) (+ y 103) "VARIAÇÃO DE SAÚDE"
+                :scale 1.12 :color +text-muted+)
+          (text renderer (+ x 20) (+ y 134) (format nil "~@D PONTOS" health-delta)
+                :scale 2.00 :color (delta-color health-delta))
+          (text renderer (+ x 20) (+ y 174)
+                (fit-text (format nil "BASE ~A" (snapshot-fingerprint baseline))
+                          (- w 40) :scale 1.00)
+                :scale 1.00 :color +text-muted+)
+          (compact-summary-row renderer (+ x 20) (+ y 214) (- w 40)
+                               "PACOTES ADICIONADOS"
+                               (length (snapshot-diff-added-packages snapshot-diff))
+                               :color +accent+)
+          (compact-summary-row renderer (+ x 20) (+ y 246) (- w 40)
+                               "PACOTES REMOVIDOS"
+                               (length (snapshot-diff-removed-packages snapshot-diff))
+                               :color '(255 202 92 255))
+          (compact-summary-row renderer (+ x 20) (+ y 278) (- w 40)
+                               "PACOTES ALTERADOS"
+                               (length (snapshot-diff-changed-packages snapshot-diff))
+                               :color +text-primary+)
+          (compact-summary-row renderer (+ x 20) (+ y 310) (- w 40)
+                               "NOVOS CICLOS"
+                               (length (architecture-diff-new-cycles diff))
+                               :color (if (architecture-diff-new-cycles diff)
+                                          '(255 112 132 255) +accent+))
+          (compact-summary-row renderer (+ x 20) (+ y 342) (- w 40)
+                               "CICLOS RESOLVIDOS"
+                               (length (architecture-diff-resolved-cycles diff))
+                               :color +accent+)
+          (compact-summary-row renderer (+ x 20) (+ y 374) (- w 40)
+                               "VARIAÇÃO DE AVISOS"
+                               (format nil "~@D" warning-delta)
+                               :color (delta-color warning-delta :positive-good nil))
+          (separator renderer (+ x 20) (+ y 410) (- (+ x w) 20))
+          (text renderer (+ x 20) (+ y 434) "MAIORES AUMENTOS DE RISCO"
+                :scale 1.16 :color +text-secondary+)
+          (if risk-increases
+              (loop for change in risk-increases
+                    for row-y from (+ y 470) by 34
+                    repeat (min 5 (length risk-increases))
+                    do (text renderer (+ x 20) row-y
+                             (fit-text (risk-change-name change) (- w 102) :scale 1.04)
+                             :scale 1.04 :color +text-secondary+)
+                       (let* ((label (format nil "+~D" (risk-change-delta change)))
+                              (label-width (vector-text-width label
+                                                              :scale (readable-scale 1.08)
+                                                              :spacing 1.0)))
+                         (text renderer (- (+ x w) label-width 20) row-y label
+                               :scale 1.08 :color '(255 112 132 255))))
+              (text renderer (+ x 20) (+ y 470) "NENHUM AUMENTO DE RISCO"
+                    :scale 1.04 :color +accent+))
+          (when (> h 680)
+            (separator renderer (+ x 20) (- (+ y h) 92) (- (+ x w) 20))
+            (text renderer (+ x 20) (- (+ y h) 66)
+                  (fit-text "6 FILTRA ALTERADOS / Y EXPORTA COMPARAÇÃO"
+                            (- w 40) :scale 1.00)
+                  :scale 1.00 :color +accent+)
+            (text renderer (+ x 20) (- (+ y h) 39)
+                  (fit-text "B SUBSTITUI A LINHA DE BASE / T VOLTA"
+                            (- w 40) :scale 1.00)
+                  :scale 1.00 :color +accent+))))))
+
 (defun draw-left-panel (renderer state x y w h)
   (panel renderer x y w h :accent +accent-dim+)
-  (if (app-state-diagnostics-p state)
-      (draw-diagnostics-panel renderer state x y w h)
-      (draw-overview-panel renderer state x y w h)))
+  (cond
+    ((app-state-changes-p state)
+     (draw-changes-panel renderer state x y w h))
+    ((app-state-diagnostics-p state)
+     (draw-diagnostics-panel renderer state x y w h))
+    (t
+     (draw-overview-panel renderer state x y w h))))
 
 (defun draw-metric-row (renderer x y w label value &key (alternate nil))
   (when alternate
@@ -1186,7 +1425,7 @@ então solicita o encerramento da aplicação."
       (search-box-geometry width)
     (declare (ignore search-y search-width search-height))
     (text renderer 27 56
-          (fit-text "0.4.1 / OBSERVATÓRIO DA ARQUITETURA LISP"
+          (fit-text "0.5.0 / OBSERVATÓRIO DA ARQUITETURA LISP"
                     (- search-x 54.0d0) :scale 1.12)
           :scale 1.12 :color +text-muted+))
   (let* ((implementation (format nil "~A ~A"
@@ -1305,7 +1544,7 @@ então solicita o encerramento da aplicação."
 (defun draw-footer (renderer state graph-x graph-w height)
   (let* ((status (if (< (malkuth.sdl3:ticks) (app-state-status-until state))
                      (app-state-status state)
-                     "/ BUSCA / 1-5 FILTRAM / I ALTERNA ABA / F FAVORITA / C EXPORTA"))
+                     "/ BUSCA / 1-6 FILTRAM / B BASE / T EVOLUÇÃO / X RELATÓRIOS"))
          (label (fit-text status graph-w :scale 1.08)))
     (text renderer graph-x (- height 29) label
           :scale 1.08
@@ -1335,7 +1574,7 @@ então solicita o encerramento da aplicação."
          (x (/ (- width w) 2.0d0))
          (y (/ (- height h) 2.0d0)))
     (panel renderer x y w h :raised t :accent +accent-dim+)
-    (text renderer (+ x 32) (+ y 26) "GUIA DO MALKUTH 0.4.1"
+    (text renderer (+ x 32) (+ y 26) "GUIA DO MALKUTH 0.5.0"
           :scale 1.92 :color +accent+)
     (text renderer (+ x 32) (+ y 66)
           (fit-text "FILTRE, INVESTIGUE, FAVORITE E EXPORTE A ARQUITETURA DA IMAGEM ATIVA"
@@ -1346,7 +1585,7 @@ então solicita o encerramento da aplicação."
           :scale 1.32 :color +text-primary+)
     (loop for (number line) in
           '(("1" "PRESSIONE / OU CTRL+F E DIGITE PARTE DO NOME PARA ABRIR UM PACOTE")
-            ("2" "USE 1-5 PARA REDUZIR O MAPA A PROJETO, RISCO, FAVORITOS OU VIZINHANÇA")
+            ("2" "USE 1-6 PARA REDUZIR O MAPA A PROJETO, RISCO, FAVORITOS OU VIZINHANÇA")
             ("3" "ALTERNE O INSPETOR COM I E EXPORTE A SELEÇÃO COM C"))
           for row-y from (+ y 162) by 47
           do (badge renderer (+ x 32) (- row-y 9) number
@@ -1364,23 +1603,23 @@ então solicita o encerramento da aplicação."
            (right (+ left column-w column-gap)))
       (help-row renderer left (+ y 378) "/" "BUSCA DE PACOTES"
                 "DIGITAR, NAVEGAR COM SETAS E ABRIR COM ENTER" column-w)
-      (help-row renderer left (+ y 438) "1-5" "FILTROS DO MAPA"
-                "TODOS, PROJETO, RISCO, FAVORITOS E VIZINHANÇA" column-w)
+      (help-row renderer left (+ y 438) "1-6" "FILTROS DO MAPA"
+                "TODOS, PROJETO, RISCO, FAVORITOS, VIZINHANÇA E ALTERADOS" column-w)
       (help-row renderer left (+ y 498) "F" "FAVORITO PERSISTENTE"
                 "MARCAR OU DESMARCAR O PACOTE SELECIONADO" column-w)
-      (help-row renderer left (+ y 558) "I" "ABAS DO INSPETOR"
-                "ALTERNAR SÍMBOLOS E DEPENDÊNCIAS DIRETAS" column-w)
-      (help-row renderer right (+ y 378) "F5" "ATUALIZAR IMAGEM"
-                "RECONSTRUIR E COMPARAR O INSTANTÂNEO" column-w)
-      (help-row renderer right (+ y 438) "C" "DOSSIÊ DO PACOTE"
-                "EXPORTAR MARKDOWN E DOT DA SELEÇÃO" column-w)
+      (help-row renderer left (+ y 558) "B" "LINHA DE BASE"
+                "CAPTURAR O ESTADO PARA COMPARAÇÕES FUTURAS" column-w)
+      (help-row renderer right (+ y 378) "T" "PAINEL DE EVOLUÇÃO"
+                "VER REGRESSÕES, CICLOS E ALTERAÇÕES DE RISCO" column-w)
+      (help-row renderer right (+ y 438) "Y" "EXPORTAR COMPARAÇÃO"
+                "GERAR MARKDOWN E JSON CONTRA A LINHA DE BASE" column-w)
       (help-row renderer right (+ y 498) "X" "RELATÓRIOS COMPLETOS"
-                "EXPORTAR SVG, JSON, DOT, MARKDOWN E MANIFESTO" column-w)
-      (help-row renderer right (+ y 558) "P" "SVG RÁPIDO"
-                "EXPORTAR SOMENTE O MAPA ATUAL" column-w))
+                "EXPORTAR SVG, JSON, DOT, MARKDOWN E CSV" column-w)
+      (help-row renderer right (+ y 558) "F5" "ATUALIZAR IMAGEM"
+                "SALVAR HISTÓRICO, RECONSTRUIR E COMPARAR" column-w))
     (separator renderer (+ x 32) (- (+ y h) 60) (- (+ x w) 32))
     (text renderer (+ x 32) (- (+ y h) 35)
-          "WASD CÂMERA / Q E ZOOM / J K NAVEGA / PGUP DN ROLA / G DIAGNÓSTICOS / H VOLTA"
+          "WASD CÂMERA / B BASE / T EVOLUÇÃO / Y EXPORTA / G DIAGNÓSTICOS / H VOLTA"
           :scale 1.02 :color +accent+)))
 
 ;;;; Composição responsiva e ciclo principal
@@ -1435,13 +1674,15 @@ então solicita o encerramento da aplicação."
                        (include-empty nil) (export-directory #P"output/")
                        (auto-orbit t) package-predicate user-package-predicate
                        (include-dependencies nil) (risk-threshold 20)
-                       initial-search)
+                       (history-retention 20) initial-search
+                       (initial-panel :overview))
   "Executa o observatório interativo da imagem ativa do Malkuth.
 
 MAX-FRAMES atende aos testes de fumaça. EXPORT-DIRECTORY recebe relatórios e
-favoritos. RISK-THRESHOLD controla o filtro visual de risco sem alterar a
-pontuação arquitetural calculada pelo núcleo. INITIAL-SEARCH abre a caixa já
-preenchida, o que também facilita inicializadores e testes visuais."
+favoritos e histórico. RISK-THRESHOLD controla o filtro visual de risco sem
+alterar a pontuação arquitetural calculada pelo núcleo. HISTORY-RETENTION limita
+a quantidade de fotografias rotativas. INITIAL-SEARCH abre a caixa já
+preenchida e INITIAL-PANEL escolhe :OVERVIEW, :DIAGNOSTICS ou :CHANGES, o que também facilita inicializadores e testes visuais."
   (let* ((snapshot (build-snapshot :include-empty include-empty
                                    :package-predicate package-predicate
                                    :user-package-predicate user-package-predicate
@@ -1454,6 +1695,7 @@ preenchida, o que também facilita inicializadores e testes visuais."
                                 :include-dependencies-p include-dependencies
                                 :export-directory (pathname export-directory)
                                 :risk-threshold (max 0 (min 100 risk-threshold))
+                                :history-retention (max 1 history-retention)
                                 :auto-orbit-p auto-orbit)))
     (validate-snapshot snapshot :errorp t)
     (when (zerop (length (snapshot-nodes snapshot)))
@@ -1466,6 +1708,14 @@ preenchida, o que também facilita inicializadores e testes visuais."
           (app-state-inspector-lines state)
           (node-symbol-lines (selected-node state) :limit 500))
     (load-favorites! state)
+    ;; Uma linha de base existente é carregada silenciosamente para que o filtro
+    ;; de alterações e o painel de evolução estejam disponíveis imediatamente.
+    (load-baseline! state)
+    (ecase initial-panel
+      (:overview nil)
+      (:diagnostics (setf (app-state-diagnostics-p state) t))
+      (:changes (when (app-state-baseline-snapshot state)
+                  (setf (app-state-changes-p state) t))))
     (when initial-search
       (setf (app-state-search-query state) (princ-to-string initial-search))
       (refresh-search-results! state))

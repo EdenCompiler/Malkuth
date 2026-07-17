@@ -364,7 +364,7 @@
       (when (probe-file temporary) (ignore-errors (delete-file temporary))))))
 
 (defun export-bundle (snapshot directory &key selected analysis)
-  "Grava SVG, JSON, Graphviz DOT, Markdown e um manifesto como um único pacote de relatórios."
+  "Grava SVG, JSON, DOT, Markdown, CSV e manifesto como um pacote coerente."
   (let* ((directory (uiop:ensure-directory-pathname
                      (merge-pathnames directory (uiop:getcwd))))
          (analysis (or analysis (analyze-snapshot snapshot)))
@@ -372,7 +372,10 @@
          (json (merge-pathnames "malkuth.json" directory))
          (dot (merge-pathnames "malkuth.dot" directory))
          (markdown (merge-pathnames "malkuth-report.md" directory))
-         (manifest (merge-pathnames "malkuth-manifest.txt" directory)))
+         (manifest (merge-pathnames "malkuth-manifest.txt" directory))
+         (csv-paths (export-csv-bundle snapshot directory :analysis analysis))
+         (packages-csv (getf csv-paths :packages-csv))
+         (dependencies-csv (getf csv-paths :dependencies-csv)))
     (ensure-directories-exist svg)
     (atomic-export-svg snapshot svg :selected selected)
     (export-json snapshot json :analysis analysis)
@@ -386,5 +389,212 @@
        (format out "fingerprint=~A~%" (snapshot-fingerprint snapshot))
        (format out "generated_at=~A~%" (iso-8601-time (snapshot-created-at snapshot)))
        (format out "health_score=~D~%" (analysis-report-health-score analysis))
-       (format out "files=malkuth.svg,malkuth.json,malkuth.dot,malkuth-report.md~%")))
-    (list :svg svg :json json :dot dot :markdown markdown :manifest manifest)))
+       (format out "files=malkuth.svg,malkuth.json,malkuth.dot,malkuth-report.md,malkuth-pacotes.csv,malkuth-dependencias.csv~%")))
+    (list :svg svg :json json :dot dot :markdown markdown :manifest manifest
+          :packages-csv packages-csv :dependencies-csv dependencies-csv)))
+
+;;;; Exportações tabulares e comparação contra linha de base
+
+(defun csv-field (value stream)
+  "Grava VALUE como campo CSV compatível com RFC 4180."
+  (let ((text (princ-to-string value)))
+    (write-char #\" stream)
+    (loop for character across text
+          do (when (char= character #\") (write-char #\" stream))
+             (write-char character stream))
+    (write-char #\" stream)))
+
+(defun csv-row (values stream)
+  "Grava uma linha CSV com todos os campos devidamente escapados."
+  (loop for value in values
+        for first = t then nil
+        do (unless first (write-char #\, stream))
+           (csv-field value stream))
+  (terpri stream))
+
+(defun export-packages-csv (snapshot pathname &key analysis)
+  "Exporta métricas de pacote em CSV para planilhas e ferramentas de BI."
+  (let ((analysis (or analysis (analyze-snapshot snapshot))))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (csv-row '("id" "nome" "papel" "internos" "externos" "simbolos"
+                  "funcoes" "genericas" "macros" "classes" "variaveis"
+                  "fan_in" "fan_out" "grau_total" "risco") out)
+       (loop for node across (snapshot-nodes snapshot)
+             for metric = (metrics-for-node analysis node)
+             do (csv-row
+                 (list (node-id node) (node-name node)
+                       (string-downcase (symbol-name (node-kind node)))
+                       (node-internal node) (node-external node)
+                       (+ (node-internal node) (node-external node))
+                       (node-functions node) (node-generics node)
+                       (node-macros node) (node-classes node)
+                       (node-variables node) (node-metrics-fan-in metric)
+                       (node-metrics-fan-out metric)
+                       (node-metrics-total-degree metric)
+                       (node-metrics-risk-score metric))
+                 out))))))
+
+(defun export-dependencies-csv (snapshot pathname)
+  "Exporta as relações USE-PACKAGE em CSV usando nomes estáveis."
+  (let ((nodes (snapshot-nodes snapshot)))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (csv-row '("origem" "destino" "peso") out)
+       (loop for edge across (snapshot-edges snapshot)
+             do (csv-row
+                 (list (node-name (aref nodes (edge-from edge)))
+                       (node-name (aref nodes (edge-to edge)))
+                       (format nil "~,4F" (edge-weight edge)))
+                 out))))))
+
+(defun export-csv-bundle (snapshot directory &key analysis)
+  "Gera as tabelas de pacotes e dependências no diretório indicado."
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (merge-pathnames directory (uiop:getcwd))))
+         (packages (merge-pathnames "malkuth-pacotes.csv" directory))
+         (dependencies (merge-pathnames "malkuth-dependencias.csv" directory)))
+    (export-packages-csv snapshot packages :analysis analysis)
+    (export-dependencies-csv snapshot dependencies)
+    (list :packages-csv packages :dependencies-csv dependencies)))
+
+(defun export-comparison-markdown (old-snapshot new-snapshot pathname
+                                   &key old-analysis new-analysis diff)
+  "Exporta uma revisão humana das mudanças entre a linha de base e o estado atual."
+  (let* ((old-analysis (or old-analysis (analyze-snapshot old-snapshot)))
+         (new-analysis (or new-analysis (analyze-snapshot new-snapshot)))
+         (diff (or diff (compare-architectures old-snapshot new-snapshot
+                                               :old-analysis old-analysis
+                                               :new-analysis new-analysis)))
+         (snapshot-diff (architecture-diff-snapshot-diff diff)))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "# Comparação arquitetural do Malkuth~%~%")
+       (format out "- Linha de base: `~A`~%" (snapshot-fingerprint old-snapshot))
+       (format out "- Estado atual: `~A`~%" (snapshot-fingerprint new-snapshot))
+       (format out "- Variação de saúde: **~@D** pontos (~D → ~D)~%"
+               (architecture-diff-health-delta diff)
+               (analysis-report-health-score old-analysis)
+               (analysis-report-health-score new-analysis))
+       (format out "- Variação de avisos: **~@D**~%~%"
+               (architecture-diff-warning-delta diff))
+       (format out "## Pacotes~%~%")
+       (format out "- Adicionados: **~D**~%" (length (snapshot-diff-added-packages snapshot-diff)))
+       (format out "- Removidos: **~D**~%" (length (snapshot-diff-removed-packages snapshot-diff)))
+       (format out "- Alterados: **~D**~%~%" (length (snapshot-diff-changed-packages snapshot-diff)))
+       (flet ((write-name-list (title items)
+                (format out "### ~A~%~%" title)
+                (if items
+                    (dolist (item items) (format out "- `~A`~%" item))
+                    (format out "Nenhum item.~%"))
+                (terpri out)))
+         (write-name-list "Pacotes adicionados" (snapshot-diff-added-packages snapshot-diff))
+         (write-name-list "Pacotes removidos" (snapshot-diff-removed-packages snapshot-diff)))
+       (format out "### Pacotes com contagens alteradas~%~%")
+       (if (snapshot-diff-changed-packages snapshot-diff)
+           (dolist (change (snapshot-diff-changed-packages snapshot-diff))
+             (format out "- `~A`: símbolos ~@D, funções ~@D, macros ~@D, classes ~@D~%"
+                     (package-change-name change)
+                     (package-change-symbol-delta change)
+                     (package-change-function-delta change)
+                     (package-change-macro-delta change)
+                     (package-change-class-delta change)))
+           (format out "Nenhum pacote teve suas contagens principais alteradas.~%"))
+       (format out "~%## Ciclos~%~%")
+       (format out "### Novos ciclos~%~%")
+       (if (architecture-diff-new-cycles diff)
+           (dolist (cycle (architecture-diff-new-cycles diff))
+             (format out "- ~{`~A`~^ → ~}~%" cycle))
+           (format out "Nenhum ciclo novo.~%"))
+       (format out "~%### Ciclos resolvidos~%~%")
+       (if (architecture-diff-resolved-cycles diff)
+           (dolist (cycle (architecture-diff-resolved-cycles diff))
+             (format out "- ~{`~A`~^ → ~}~%" cycle))
+           (format out "Nenhum ciclo resolvido.~%"))
+       (format out "~%## Variações de risco local~%~%")
+       (format out "| Pacote | Antes | Agora | Variação |~%|---|---:|---:|---:|~%")
+       (let ((changes (append (architecture-diff-risk-increases diff)
+                              (architecture-diff-risk-decreases diff))))
+         (if changes
+             (dolist (change changes)
+               (format out "| `~A` | ~D | ~D | ~@D |~%"
+                       (risk-change-name change) (risk-change-old-risk change)
+                       (risk-change-new-risk change) (risk-change-delta change)))
+             (format out "| _Nenhuma alteração_ | — | — | — |~%")))
+       (format out "~%## Interpretação~%~%")
+       (format out "Mudanças de risco e saúde são heurísticas. Use este relatório para orientar revisão de código, não como decisão automática isolada.~%")))))
+
+(defun export-comparison-json (old-snapshot new-snapshot pathname
+                               &key old-analysis new-analysis diff)
+  "Exporta a comparação arquitetural em JSON estável para automação."
+  (let* ((old-analysis (or old-analysis (analyze-snapshot old-snapshot)))
+         (new-analysis (or new-analysis (analyze-snapshot new-snapshot)))
+         (diff (or diff (compare-architectures old-snapshot new-snapshot
+                                               :old-analysis old-analysis
+                                               :new-analysis new-analysis)))
+         (snapshot-diff (architecture-diff-snapshot-diff diff)))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "{\"schemaVersion\":\"1.0\",\"baselineFingerprint\":")
+       (json-string (snapshot-fingerprint old-snapshot) out)
+       (format out ",\"currentFingerprint\":")
+       (json-string (snapshot-fingerprint new-snapshot) out)
+       (format out ",\"health\":{\"before\":~D,\"after\":~D,\"delta\":~D}"
+               (analysis-report-health-score old-analysis)
+               (analysis-report-health-score new-analysis)
+               (architecture-diff-health-delta diff))
+       (format out ",\"warningDelta\":~D" (architecture-diff-warning-delta diff))
+       (format out ",\"packages\":{\"added\":")
+       (json-array (snapshot-diff-added-packages snapshot-diff) #'json-string out)
+       (format out ",\"removed\":")
+       (json-array (snapshot-diff-removed-packages snapshot-diff) #'json-string out)
+       (format out ",\"changed\":")
+       (json-array
+        (snapshot-diff-changed-packages snapshot-diff)
+        (lambda (change stream)
+          (format stream "{\"name\":")
+          (json-string (package-change-name change) stream)
+          (format stream ",\"symbolDelta\":~D,\"functionDelta\":~D,\"macroDelta\":~D,\"classDelta\":~D}"
+                  (package-change-symbol-delta change)
+                  (package-change-function-delta change)
+                  (package-change-macro-delta change)
+                  (package-change-class-delta change)))
+        out)
+       (format out "},\"newCycles\":")
+       (json-array (architecture-diff-new-cycles diff)
+                   (lambda (cycle stream) (json-array cycle #'json-string stream)) out)
+       (format out ",\"resolvedCycles\":")
+       (json-array (architecture-diff-resolved-cycles diff)
+                   (lambda (cycle stream) (json-array cycle #'json-string stream)) out)
+       (format out ",\"riskChanges\":")
+       (json-array
+        (append (architecture-diff-risk-increases diff)
+                (architecture-diff-risk-decreases diff))
+        (lambda (change stream)
+          (format stream "{\"name\":")
+          (json-string (risk-change-name change) stream)
+          (format stream ",\"before\":~D,\"after\":~D,\"delta\":~D}"
+                  (risk-change-old-risk change)
+                  (risk-change-new-risk change)
+                  (risk-change-delta change)))
+        out)
+       (format out "}~%")))))
+
+(defun export-comparison-bundle (old-snapshot new-snapshot directory
+                                 &key old-analysis new-analysis diff)
+  "Gera Markdown e JSON da comparação contra uma linha de base."
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (merge-pathnames directory (uiop:getcwd))))
+         (markdown (merge-pathnames "malkuth-comparacao.md" directory))
+         (json (merge-pathnames "malkuth-comparacao.json" directory)))
+    (export-comparison-markdown old-snapshot new-snapshot markdown
+                                :old-analysis old-analysis
+                                :new-analysis new-analysis :diff diff)
+    (export-comparison-json old-snapshot new-snapshot json
+                            :old-analysis old-analysis
+                            :new-analysis new-analysis :diff diff)
+    (list :markdown markdown :json json)))

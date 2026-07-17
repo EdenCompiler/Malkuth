@@ -25,6 +25,18 @@
                  (malkuth.model::make-edge :from 2 :to 0))))
     (malkuth.model::make-snapshot :nodes nodes :edges edges)))
 
+(defun synthetic-baseline-snapshot ()
+  "Cria a topologia anterior ao fechamento do ciclo APP.C -> APP.A."
+  (let* ((nodes (vector
+                 (malkuth.model::make-node :id 0 :name "APP.A" :kind :user)
+                 (malkuth.model::make-node :id 1 :name "APP.B" :kind :user)
+                 (malkuth.model::make-node :id 2 :name "APP.C" :kind :user)
+                 (malkuth.model::make-node :id 3 :name "APP.ORPHAN" :kind :user)))
+         (edges (vector
+                 (malkuth.model::make-edge :from 0 :to 1)
+                 (malkuth.model::make-edge :from 1 :to 2))))
+    (malkuth.model::make-snapshot :nodes nodes :edges edges)))
+
 (defun file-contains-p (pathname needle)
   (with-open-file (stream pathname :direction :input :external-format :utf-8)
     (let ((text (make-string (file-length stream))))
@@ -89,6 +101,43 @@
     (check (null (malkuth.model:search-nodes snapshot "pacote-inexistente"))
            "Uma consulta sem correspondência deveria retornar NIL.")))
 
+(defun run-history-and-comparison-test ()
+  (let* ((baseline (synthetic-baseline-snapshot))
+         (current (synthetic-cycle-snapshot))
+         (directory (merge-pathnames "output/test-history/" (uiop:getcwd)))
+         (baseline-path (merge-pathnames "baseline.sexp" directory))
+         (saved (malkuth.history:save-snapshot-file baseline baseline-path
+                                                     :label "teste"))
+         (loaded (malkuth.history:load-snapshot-file saved))
+         (baseline-analysis (malkuth.analysis:analyze-snapshot loaded))
+         (current-analysis (malkuth.analysis:analyze-snapshot current))
+         (diff (malkuth.analysis:compare-architectures
+                loaded current :old-analysis baseline-analysis
+                :new-analysis current-analysis))
+         (comparison (malkuth.export:export-comparison-bundle
+                      loaded current directory
+                      :old-analysis baseline-analysis
+                      :new-analysis current-analysis :diff diff))
+         (csv (malkuth.export:export-csv-bundle current directory
+                                                :analysis current-analysis)))
+    (check (string= (malkuth.model:snapshot-fingerprint baseline)
+                    (malkuth.model:snapshot-fingerprint loaded))
+           "A persistência alterou a impressão digital do instantâneo.")
+    (check (= 1 (length (malkuth.analysis:architecture-diff-new-cycles diff)))
+           "A comparação deveria detectar o novo ciclo sintético.")
+    (check (minusp (malkuth.analysis:architecture-diff-health-delta diff))
+           "O novo ciclo deveria reduzir a saúde arquitetural.")
+    (check (probe-file (getf comparison :markdown))
+           "O relatório Markdown de comparação não foi criado.")
+    (check (probe-file (getf comparison :json))
+           "O JSON de comparação não foi criado.")
+    (check (file-contains-p (getf comparison :json) "\"newCycles\"")
+           "O JSON de comparação não contém novos ciclos.")
+    (check (probe-file (getf csv :packages-csv))
+           "O CSV de pacotes não foi criado.")
+    (check (probe-file (getf csv :dependencies-csv))
+           "O CSV de dependências não foi criado.")))
+
 (defun run-export-test (snapshot)
   (let* ((directory (merge-pathnames "output/test-report/" (uiop:getcwd)))
          (paths (malkuth.export:export-bundle snapshot directory))
@@ -99,7 +148,7 @@
          (focused (malkuth.export:export-package-bundle snapshot selected directory))
          (focused-markdown (getf focused :markdown))
          (focused-dot (getf focused :dot)))
-    (dolist (key '(:svg :json :dot :markdown :manifest))
+    (dolist (key '(:svg :json :dot :markdown :manifest :packages-csv :dependencies-csv))
       (check (probe-file (getf paths key)) "Exportação ausente: ~A" key))
     (check (file-contains-p json "\"schemaVersion\":\"1.1\"")
            "O JSON não declara o esquema 1.1 esperado.")
@@ -118,6 +167,7 @@
 (defun run-tests ()
   (let ((snapshot (run-live-snapshot-test)))
     (run-analysis-test)
+    (run-history-and-comparison-test)
     (run-export-test snapshot)
     (format t "~&Suíte de testes do MALKUTH aprovada: ~S~%"
             (malkuth.model:snapshot-summary snapshot))

@@ -1,4 +1,4 @@
-# Malkuth 0.4.1
+# Malkuth 0.5.0
 
 **Observatório da imagem Common Lisp, analisador de arquitetura por pacotes e gerador de relatórios.**
 
@@ -6,17 +6,18 @@ O Malkuth examina o processo Lisp em execução e transforma seus pacotes em um 
 
 ![Interface do Malkuth](docs/imagens/interface.png)
 
-## Novidades da versão 0.4.1
+## Novidades da versão 0.5.0
 
-- caixa de busca textual sempre visível na interface;
-- ativação por clique, `/` ou `Ctrl+F`;
-- entrada Unicode por `SDL_EVENT_TEXT_INPUT`, compatível com layouts internacionais e IME;
-- resultados em tempo real ordenados por nome exato, prefixo, segmento, trecho e subsequência;
-- navegação com `↑`, `↓`, `Tab`, `Enter`, `Backspace` e `Esc`;
-- seleção direta sem perder o filtro atual do mapa;
-- API pública `malkuth.model:search-nodes`;
-- abertura opcional com consulta inicial por `MALKUTH_INITIAL_SEARCH`;
-- teste de regressão da classificação de resultados.
+- linha de base persistente para comparar a arquitetura ao longo do tempo;
+- histórico rotativo de instantâneos salvo automaticamente antes de cada `F5`;
+- painel de evolução com variação de saúde, avisos, ciclos e risco local;
+- filtro `6` para mostrar apenas pacotes adicionados ou alterados;
+- marca magenta nos pacotes que mudaram desde a linha de base;
+- exportação da comparação em Markdown e JSON;
+- tabelas CSV de pacotes e dependências incluídas no pacote completo;
+- políticas de CI para novos ciclos, regressão de saúde e aumentos de risco;
+- persistência segura dos instantâneos em S-expression com `*READ-EVAL*` desativado;
+- retenção configurável do histórico por `MALKUTH_HISTORY_RETENTION`.
 
 ## Capacidades principais
 
@@ -28,9 +29,9 @@ O Malkuth examina o processo Lisp em execução e transforma seus pacotes em um 
 - detecção de ciclos por componentes fortemente conexos;
 - identificação de pacotes isolados, grandes e excessivamente acoplados;
 - pontuação heurística de saúde arquitetural;
-- atualização da imagem com comparação entre instantâneos;
+- atualização da imagem com histórico e comparação contra linha de base;
 - escopo por prefixos de pacotes;
-- exportações atômicas SVG, JSON, DOT e Markdown;
+- exportações atômicas SVG, JSON, DOT, Markdown e CSV;
 - políticas de arquitetura para CI;
 - núcleo utilizável sem SDL3 e CFFI.
 
@@ -77,12 +78,16 @@ sbcl --script render-svg.lisp
 | `3` | Mostrar pacotes acima do limiar de risco |
 | `4` | Mostrar favoritos |
 | `5` ou `V` | Mostrar a vizinhança direta da seleção |
+| `6` | Mostrar pacotes alterados desde a linha de base |
 | `F` | Adicionar ou remover favorito |
+| `B` | Capturar o estado atual como linha de base |
+| `T` | Abrir ou fechar o painel de evolução |
+| `Y` | Exportar a comparação em Markdown e JSON |
 | `I` | Alternar símbolos e dependências no inspetor |
 | `C` | Exportar dossiê do pacote selecionado |
 | `F5` | Reconstruir e comparar a imagem |
 | `G` | Alternar diagnósticos |
-| `X` | Exportar o pacote completo de relatórios |
+| `X` | Exportar o pacote completo, incluindo CSV |
 | `P` | Exportar rapidamente o SVG |
 | `J / K` ou `Tab` | Pacote anterior / próximo no filtro atual |
 | `Page Up / Page Down` | Rolar a aba ativa do inspetor |
@@ -94,6 +99,24 @@ sbcl --script render-svg.lisp
 | `H` | Ajuda |
 | `Esc` | Fechar busca/ajuda; pressionar novamente para encerrar |
 
+
+## Linha de base, histórico e evolução
+
+Pressione `B` para guardar o instantâneo atual como referência. Depois de carregar código, redefinir funções ou ativar plugins, pressione `F5` para reconstruir a imagem. O Malkuth compara o novo estado com a linha de base e destaca pacotes adicionados ou alterados.
+
+- `T` abre o painel de evolução;
+- `6` restringe o mapa aos pacotes alterados;
+- `Y` gera `malkuth-comparacao.md` e `malkuth-comparacao.json`;
+- cada atualização salva o estado anterior em `output/historico/`;
+- a linha de base fica em `output/malkuth-linha-de-base.sexp`.
+
+A retenção padrão é de 20 fotografias:
+
+```bash
+MALKUTH_HISTORY_RETENTION=50 sbcl --script run.lisp
+```
+
+Consulte [Histórico e comparação](docs/HISTORICO-E-COMPARACAO.md).
 
 ## Busca de pacotes
 
@@ -136,6 +159,10 @@ MALKUTH_OUTPUT_DIR="$PWD/build/malkuth/" \
 MALKUTH_MIN_HEALTH=80 \
 MALKUTH_FAIL_ON_CYCLES=true \
 MALKUTH_MAX_WARNINGS=5 \
+MALKUTH_BASELINE_FILE="$PWD/build/malkuth-baseline.sexp" \
+MALKUTH_FAIL_ON_NEW_CYCLES=true \
+MALKUTH_MAX_HEALTH_REGRESSION=5 \
+MALKUTH_MAX_RISK_INCREASES=3 \
 sbcl --script analyze.lisp
 ```
 
@@ -165,6 +192,7 @@ Códigos de saída: `0` sucesso, `1` erro operacional e `2` política arquitetur
 ```text
 src/model.lisp        reflexão, busca, perfis, relações, validação e impressão digital
 src/analysis.lisp     métricas, ciclos, avisos, saúde e comparação
+src/history.lisp      persistência, histórico e retenção de instantâneos
 src/layout.lisp       arranjo tridimensional determinístico
 src/svg.lisp          painel SVG autocontido
 src/export.lisp       exportações globais e focadas com escrita atômica
@@ -190,6 +218,7 @@ make validate
 - O risco e a saúde são heurísticas, não provas de qualidade ou segurança.
 - Favoritos são persistidos no diretório de saída e identificados pelo nome do pacote.
 - A busca não possui seleção parcial do texto, histórico de consultas ou área de transferência.
+- O histórico compara estrutura de pacotes e contagens; ele não preserva funções executáveis nem o estado completo do heap.
 - A interface ainda não oferece recursos completos de acessibilidade.
 - O Linux é a principal plataforma de validação desta versão.
 

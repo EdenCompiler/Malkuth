@@ -4,6 +4,7 @@
 |---|---|
 | [Instalação](INSTALACAO.md) | Dependências, Quicklisp e SDL3 |
 | [Uso](USO.md) | Fluxo, interface, abas e exportação |
+| [Histórico e comparação](HISTORICO-E-COMPARACAO.md) | Linha de base, evolução, retenção e regressões |
 | [Busca de pacotes](BUSCA.md) | Caixa textual, atalhos, relevância e API |
 | [Filtros e favoritos](FILTROS-E-FAVORITOS.md) | Foco local, persistência e risco visual |
 | [Arquitetura](ARQUITETURA.md) | Componentes, fluxo e decisões de projeto |
