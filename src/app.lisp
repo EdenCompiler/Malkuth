@@ -19,6 +19,16 @@
   baseline-snapshot
   baseline-analysis
   architecture-diff
+  ;; Políticas e rotas são estados derivados do instantâneo corrente. Eles são
+  ;; recalculados após F5 para nunca apontarem para IDs de uma fotografia antiga.
+  policy-file
+  (policy-rules nil :type list)
+  policy-report
+  (policy-p nil)
+  path-origin-name
+  (dependency-path nil :type list)
+  (path-p nil)
+  trend-report
   (changes-p nil)
   (history-retention 20 :type fixnum)
   (export-directory #P"output/" :type pathname)
@@ -98,7 +108,9 @@
     (:risk "RISCO")
     (:favorites "FAVORITOS")
     (:neighbors "VIZINHANÇA")
-    (:changed "ALTERADOS")))
+    (:changed "ALTERADOS")
+    (:violations "VIOLAÇÕES")
+    (:path "CAMINHO")))
 
 (defun inspector-tab-name (tab)
   "Nome legível da aba ativa do inspetor."
@@ -194,6 +206,26 @@
                   :key #'malkuth.analysis:package-change-name
                   :test #'string-equal))))))
 
+
+(defun policy-violation-package-p (state node)
+  "Informa se NODE participa de uma violação da política carregada."
+  (let ((report (app-state-policy-report state)))
+    (and report
+         (member (node-name node) (violating-package-names report)
+                 :test #'string-equal))))
+
+(defun dependency-path-ids (state)
+  "Retorna os IDs da rota ativa em ordem, ou NIL quando não existe rota."
+  (mapcar #'node-id (app-state-dependency-path state)))
+
+(defun dependency-path-node-p (state node)
+  "Informa se NODE pertence à rota arquitetural ativa."
+  (member (node-id node) (dependency-path-ids state) :test #'=))
+
+(defun dependency-path-edge-p-for-state (state edge)
+  "Informa se EDGE liga dois nós consecutivos da rota ativa."
+  (malkuth.model:dependency-path-edge-p (dependency-path-ids state) edge))
+
 (defun display-node-p (state node)
   "Decide se NODE participa da visão atual.
 
@@ -211,7 +243,9 @@ perca o contexto ao alternar modos."
                             (node-neighbor-ids (app-state-snapshot state)
                                                (selected-node state))
                             :test #'=))
-        (:changed (changed-package-p state node)))))
+        (:changed (changed-package-p state node))
+        (:violations (policy-violation-package-p state node))
+        (:path (dependency-path-node-p state node)))))
 
 (defun display-nodes (state)
   "Lista os nós aceitos pelo filtro atual em ordem de identificador."
@@ -527,6 +561,137 @@ perca o contexto ao alternar modos."
                   5200)
     paths))
 
+
+(defun recompute-policy-report! (state)
+  "Reavalia as políticas já carregadas contra o instantâneo corrente."
+  (setf (app-state-policy-report state)
+        (and (app-state-policy-rules state)
+             (evaluate-policies (app-state-snapshot state)
+                                (app-state-policy-rules state)
+                                :analysis (app-state-analysis state)))))
+
+(defun load-policies! (state &key (announce nil))
+  "Carrega POLICY-FILE, quando configurado, e atualiza o relatório da sessão."
+  (let ((pathname (app-state-policy-file state)))
+    (cond
+      ((null pathname)
+       (setf (app-state-policy-rules state) nil
+             (app-state-policy-report state) nil))
+      ((not (probe-file pathname))
+       (when announce
+         (flash-status state (format nil "ARQUIVO DE POLÍTICAS NÃO ENCONTRADO: ~A"
+                                     pathname) 5200)))
+      (t
+       (handler-case
+           (let* ((rules (load-policy-file pathname))
+                  (report (evaluate-policies (app-state-snapshot state) rules
+                                             :analysis (app-state-analysis state))))
+             (setf (app-state-policy-rules state) rules
+                   (app-state-policy-report state) report)
+             (when announce
+               (flash-status state
+                             (format nil "POLÍTICAS: ~D REGRAS / ~D VIOLAÇÕES"
+                                     (length (policy-report-rules report))
+                                     (length (policy-report-violations report)))
+                             4200))
+             report)
+         (error (condition)
+           (when announce
+             (flash-status state (format nil "FALHA NAS POLÍTICAS: ~A" condition) 5200))
+           nil))))))
+
+(defun mark-path-origin! (state)
+  "Marca o pacote atual como origem de uma investigação de caminho."
+  (let ((node (selected-node state)))
+    (setf (app-state-path-origin-name state) (node-name node)
+          (app-state-dependency-path state) (list node)
+          (app-state-path-p state) t
+          (app-state-policy-p state) nil
+          (app-state-changes-p state) nil
+          (app-state-diagnostics-p state) nil)
+    (flash-status state
+                  (format nil "ORIGEM DO CAMINHO: ~A / SELECIONE O DESTINO E PRESSIONE N"
+                          (node-name node))
+                  5200)
+    node))
+
+(defun compute-dependency-path! (state)
+  "Calcula a menor rota não orientada entre a origem marcada e a seleção atual."
+  (if (null (app-state-path-origin-name state))
+      (mark-path-origin! state)
+      (let* ((snapshot (app-state-snapshot state))
+             (origin (find-node-by-name snapshot (app-state-path-origin-name state)))
+             (target (selected-node state)))
+        (unless origin
+          (setf (app-state-path-origin-name state) nil
+                (app-state-dependency-path state) nil)
+          (error "A origem marcada não existe mais no instantâneo atual."))
+        (let ((path (shortest-dependency-path snapshot origin target :direction :either)))
+          (if path
+              (progn
+                (setf (app-state-dependency-path state) path
+                      (app-state-path-p state) t
+                      (app-state-policy-p state) nil
+                      (app-state-changes-p state) nil
+                      (app-state-diagnostics-p state) nil)
+                (flash-status state
+                              (format nil "CAMINHO: ~A → ~A / ~D SALTOS"
+                                      (node-name origin) (node-name target)
+                                      (max 0 (1- (length path))))
+                              5200)
+                path)
+              (progn
+                (setf (app-state-dependency-path state) (list origin)
+                      (app-state-path-p state) t)
+                (flash-status state
+                              (format nil "SEM CAMINHO ENTRE ~A E ~A"
+                                      (node-name origin) (node-name target))
+                              4200)
+                nil))))))
+
+(defun clear-dependency-path! (state)
+  "Descarta a origem e a rota arquitetural ativas."
+  (setf (app-state-path-origin-name state) nil
+        (app-state-dependency-path state) nil
+        (app-state-path-p state) nil)
+  (when (eq (app-state-view-filter state) :path)
+    (set-view-filter! state :all))
+  (flash-status state "CAMINHO LIMPO"))
+
+(defun export-current-path! (state)
+  "Exporta a rota arquitetural ativa em Markdown e Graphviz DOT."
+  (unless (and (app-state-dependency-path state)
+               (> (length (app-state-dependency-path state)) 1))
+    (error "Nenhum caminho completo foi calculado. Use M e depois N."))
+  (let ((paths (export-path-bundle
+                (app-state-snapshot state)
+                (app-state-dependency-path state)
+                (app-state-export-directory state)
+                :direction :either)))
+    (flash-status state
+                  (format nil "CAMINHO EXPORTADO: ~A"
+                          (namestring (getf paths :markdown)))
+                  5200)
+    paths))
+
+(defun refresh-trend-report! (state)
+  "Reconstrói a série temporal usando o histórico persistido e o estado atual."
+  (setf (app-state-trend-report state)
+        (analyze-history (history-directory state)
+                         :current-snapshot (app-state-snapshot state)
+                         :limit (app-state-history-retention state))))
+
+(defun export-current-trend! (state)
+  "Exporta CSV, JSON e Markdown da tendência arquitetural da sessão."
+  (let ((report (or (app-state-trend-report state)
+                    (refresh-trend-report! state))))
+    (let ((paths (export-trend-bundle report (app-state-export-directory state))))
+      (flash-status state
+                    (format nil "TENDÊNCIA EXPORTADA: ~A"
+                            (namestring (getf paths :markdown)))
+                    5200)
+      paths)))
+
 (defun dependency-rows (state)
   "Monta as linhas da aba de dependências com direção explícita."
   (let* ((snapshot (app-state-snapshot state))
@@ -582,6 +747,16 @@ perca o contexto ao alternar modos."
             (app-state-hover-index state) -1)
       (set-selected! state selected)
       (recompute-architecture-diff! state)
+      (recompute-policy-report! state)
+      (refresh-trend-report! state)
+      ;; A rota é reconstruída por nomes estáveis porque os objetos NODE do
+      ;; instantâneo anterior deixam de ser válidos depois da atualização.
+      (when (app-state-path-origin-name state)
+        (let ((origin (find-node-by-name fresh (app-state-path-origin-name state))))
+          (setf (app-state-dependency-path state)
+                (and origin
+                     (shortest-dependency-path fresh origin selected
+                                               :direction :either)))))
       (when (plusp (length (app-state-search-query state)))
         (refresh-search-results! state :preserve-index t))
       (flash-status
@@ -633,6 +808,25 @@ perca o contexto ao alternar modos."
                       5200))))
   (when (key-edge-p state malkuth.sdl3:+sc-i+)
     (toggle-inspector-tab! state))
+  (when (key-edge-p state malkuth.sdl3:+sc-l+)
+    (if (app-state-policy-report state)
+        (progn
+          (setf (app-state-policy-p state) (not (app-state-policy-p state))
+                (app-state-path-p state) nil
+                (app-state-changes-p state) nil
+                (app-state-diagnostics-p state) nil)
+          (flash-status state (if (app-state-policy-p state)
+                                  "PAINEL DE POLÍTICAS ABERTO"
+                                  "VISÃO GERAL DA IMAGEM ABERTA")))
+        (flash-status state "NENHUMA POLÍTICA CARREGADA / USE MALKUTH_POLICY_FILE" 4200)))
+  (when (key-edge-p state malkuth.sdl3:+sc-m+)
+    (mark-path-origin! state))
+  (when (key-edge-p state malkuth.sdl3:+sc-n+)
+    (handler-case (compute-dependency-path! state)
+      (error (condition)
+        (flash-status state (format nil "FALHA NO CAMINHO: ~A" condition) 5200))))
+  (when (key-edge-p state malkuth.sdl3:+sc-z+)
+    (clear-dependency-path! state))
   (when (key-edge-p state malkuth.sdl3:+sc-v+)
     (set-view-filter! state
                       (if (eq (app-state-view-filter state) :neighbors)
@@ -647,6 +841,14 @@ perca o contexto ao alternar modos."
     (if (app-state-architecture-diff state)
         (set-view-filter! state :changed)
         (flash-status state "O FILTRO ALTERADOS EXIGE UMA LINHA DE BASE" 3600)))
+  (when (key-edge-p state malkuth.sdl3:+sc-7+)
+    (if (app-state-policy-report state)
+        (set-view-filter! state :violations)
+        (flash-status state "O FILTRO VIOLAÇÕES EXIGE MALKUTH_POLICY_FILE" 3600)))
+  (when (key-edge-p state malkuth.sdl3:+sc-8+)
+    (if (app-state-dependency-path state)
+        (set-view-filter! state :path)
+        (flash-status state "O FILTRO CAMINHO EXIGE UMA ORIGEM E UM DESTINO" 3600)))
   (when (key-edge-p state malkuth.sdl3:+sc-o+)
     (setf (app-state-auto-orbit-p state) (not (app-state-auto-orbit-p state)))
     (flash-status state (if (app-state-auto-orbit-p state)
@@ -686,6 +888,10 @@ perca o contexto ao alternar modos."
                          (app-state-export-directory state)
                          :selected (selected-node state)
                          :analysis (app-state-analysis state))
+          (when (app-state-policy-report state)
+            (export-policy-bundle (app-state-policy-report state)
+                                  (app-state-export-directory state)))
+          (export-current-trend! state)
           (flash-status state
                         (format nil "PACOTE DE RELATÓRIOS EXPORTADO: ~A"
                                 (namestring (app-state-export-directory state)))
@@ -696,6 +902,10 @@ perca o contexto ao alternar modos."
     (handler-case (export-current-comparison! state)
       (error (condition)
         (flash-status state (format nil "FALHA AO EXPORTAR COMPARAÇÃO: ~A" condition) 5200))))
+  (when (key-edge-p state malkuth.sdl3:+sc-u+)
+    (handler-case (export-current-path! state)
+      (error (condition)
+        (flash-status state (format nil "FALHA AO EXPORTAR CAMINHO: ~A" condition) 5200))))
   (when (key-edge-p state malkuth.sdl3:+sc-c+)
     (handler-case
         (let* ((paths (export-package-bundle
@@ -898,15 +1108,27 @@ então solicita o encerramento da aplicação."
           for b = (aref nodes (edge-to edge))
           when (and (display-node-p state a) (display-node-p state b)
                     (node-visible-p a) (node-visible-p b))
-            do (let* ((connected (or (eq a selected) (eq b selected)))
+            do (let* ((route-edge (dependency-path-edge-p-for-state state edge))
+                      (connected (or (eq a selected) (eq b selected)))
                       (depth (/ (+ (node-depth a) (node-depth b)) 2.0d0))
                       (alpha (if connected 145
                                  (round (clamp (- 72 (* 0.40 depth)) 12 48)))))
-                 (if connected
-                     (malkuth.sdl3:set-color renderer 112 226 194 alpha)
-                     (malkuth.sdl3:set-color renderer 82 139 219 alpha))
-                 (malkuth.sdl3:line renderer (node-screen-x a) (node-screen-y a)
-                                    (node-screen-x b) (node-screen-y b))))
+                 (cond
+                   (route-edge
+                    ;; Três linhas quase coincidentes tornam a rota reconhecível
+                    ;; mesmo sobre um grafo denso sem exigir primitivas adicionais.
+                    (malkuth.sdl3:set-color renderer 255 105 180 245)
+                    (loop for offset in '(-1.2d0 0.0d0 1.2d0)
+                          do (malkuth.sdl3:line
+                              renderer
+                              (+ (node-screen-x a) offset) (+ (node-screen-y a) offset)
+                              (+ (node-screen-x b) offset) (+ (node-screen-y b) offset))))
+                   (t
+                    (if connected
+                        (malkuth.sdl3:set-color renderer 112 226 194 alpha)
+                        (malkuth.sdl3:set-color renderer 82 139 219 alpha))
+                    (malkuth.sdl3:line renderer (node-screen-x a) (node-screen-y a)
+                                       (node-screen-x b) (node-screen-y b))))))
 
     ;; A ordem de profundidade evita que nós distantes cubram os mais próximos.
     (dolist (node (remove-if-not (lambda (item) (display-node-p state item))
@@ -916,6 +1138,8 @@ então solicita o encerramento da aplicação."
                (hovered-p (and hovered (eq node hovered)))
                (favorite (favorite-p state node))
                (changed (changed-package-p state node))
+               (violating (policy-violation-package-p state node))
+               (on-path (dependency-path-node-p state node))
                (radius (projected-radius node)))
           (when (or selected-p hovered-p)
             (loop for halo from (if selected-p 32 23) downto 13 by 4
@@ -923,6 +1147,16 @@ então solicita o encerramento da aplicação."
                   do (malkuth.sdl3:set-color renderer r g b alpha)
                      (malkuth.sdl3:circle renderer (node-screen-x node)
                                           (node-screen-y node) halo :segments 28)))
+          ;; Violações usam vermelho e caminhos usam rosa. Os anéis são
+          ;; independentes para que um pacote possa acumular os dois estados.
+          (when violating
+            (malkuth.sdl3:set-color renderer 255 104 104 235)
+            (malkuth.sdl3:circle renderer (node-screen-x node)
+                                 (node-screen-y node) (+ radius 7.5d0) :segments 24))
+          (when on-path
+            (malkuth.sdl3:set-color renderer 255 105 180 245)
+            (malkuth.sdl3:circle renderer (node-screen-x node)
+                                 (node-screen-y node) (+ radius 4.0d0) :segments 24))
           ;; Pacotes alterados recebem um anel magenta; favoritos mantêm o anel
           ;; dourado externo. As duas marcações podem coexistir.
           (when changed
@@ -943,7 +1177,7 @@ então solicita o encerramento da aplicação."
           (malkuth.sdl3:set-color renderer r g b (if (or selected-p hovered-p) 255 225))
           (malkuth.sdl3:circle renderer (node-screen-x node)
                                (node-screen-y node) radius :segments 24)
-          (when (or selected-p hovered-p favorite changed
+          (when (or selected-p hovered-p favorite changed violating on-path
                     (gethash (node-id node) label-ids))
             (let* ((scale (cond (selected-p 1.42d0) (hovered-p 1.25d0) (t 1.15d0)))
                    (screen-x (node-screen-x node))
@@ -952,7 +1186,9 @@ então solicita o encerramento da aplicação."
                    (left-room (max 0.0d0 (- screen-x graph-x radius 12.0d0)))
                    (draw-left-p (> left-room right-room))
                    (room (max 30.0d0 (min 260.0d0 (if draw-left-p left-room right-room))))
-                   (prefix (cond ((and favorite changed) "FAV + ALT / ")
+                   (prefix (cond (violating "POL / ")
+                                 (on-path "ROTA / ")
+                                 ((and favorite changed) "FAV + ALT / ")
                                  (favorite "FAV / ")
                                  (changed "ALT / ")
                                  (t "")))
@@ -967,6 +1203,8 @@ então solicita o encerramento da aplicação."
               (text renderer label-x label-y label :scale scale
                     :color (cond (selected-p '(235 255 248 255))
                                  (hovered-p '(224 237 252 255))
+                                 (violating '(255 126 126 255))
+                                 (on-path '(255 151 205 255))
                                  (favorite '(255 214 112 245))
                                  (changed '(255 151 205 245))
                                  (t '(154 178 211 235)))))))))
@@ -1040,7 +1278,7 @@ então solicita o encerramento da aplicação."
                            :color '(255 214 112 255)))
     (when (> h 715)
       (text renderer (+ x 20) (+ y 674)
-            (fit-text "1-6 FILTROS / B LINHA DE BASE" (- w 40) :scale 1.02)
+            (fit-text "1-8 FILTROS / M-N CAMINHO" (- w 40) :scale 1.02)
             :scale 1.02 :color +accent+)
       (text renderer (+ x 20) (+ y 701)
             (fit-text "T EVOLUÇÃO / Y EXPORTA COMPARAÇÃO" (- w 40) :scale 1.02)
@@ -1190,9 +1428,128 @@ então solicita o encerramento da aplicação."
                             (- w 40) :scale 1.00)
                   :scale 1.00 :color +accent+))))))
 
+
+(defun draw-policy-panel (renderer state x y w h)
+  "Desenha o resultado das políticas declarativas carregadas para a sessão."
+  (let* ((report (app-state-policy-report state))
+         (violations (and report (policy-report-violations report))))
+    (text renderer (+ x 20) (+ y 18) "POLÍTICAS ARQUITETURAIS"
+          :scale 1.62 :color +text-primary+)
+    (text renderer (+ x 20) (+ y 49) "REGRAS DECLARATIVAS DO PROJETO"
+          :scale 1.08 :color +text-muted+)
+    (separator renderer (+ x 20) (+ y 77) (- (+ x w) 20))
+    (if (null report)
+        (progn
+          (text renderer (+ x 20) (+ y 112) "NENHUMA POLÍTICA CARREGADA"
+                :scale 1.18 :color '(255 202 92 255))
+          (text renderer (+ x 20) (+ y 151)
+                (fit-text "DEFINA MALKUTH_POLICY_FILE PARA ATIVAR"
+                          (- w 40) :scale 1.02)
+                :scale 1.02 :color +text-muted+))
+        (progn
+          (text renderer (+ x 20) (+ y 104)
+                (if (policy-report-passed-p report) "APROVADO" "REPROVADO")
+                :scale 2.05
+                :color (if (policy-report-passed-p report)
+                           +accent+ '(255 112 132 255)))
+          (compact-summary-row renderer (+ x 20) (+ y 158) (- w 40)
+                               "REGRAS" (length (policy-report-rules report)))
+          (compact-summary-row renderer (+ x 20) (+ y 190) (- w 40)
+                               "ERROS" (policy-report-error-count report)
+                               :color (if (plusp (policy-report-error-count report))
+                                          '(255 112 132 255) +accent+))
+          (compact-summary-row renderer (+ x 20) (+ y 222) (- w 40)
+                               "AVISOS" (policy-report-warning-count report)
+                               :color '(255 202 92 255))
+          (compact-summary-row renderer (+ x 20) (+ y 254) (- w 40)
+                               "PACOTES ENVOLVIDOS"
+                               (length (violating-package-names report)))
+          (separator renderer (+ x 20) (+ y 286) (- (+ x w) 20))
+          (text renderer (+ x 20) (+ y 310) "VIOLAÇÕES PRIORITÁRIAS"
+                :scale 1.16 :color +text-secondary+)
+          (if violations
+              (loop for item in violations
+                    for row-y from (+ y 346) by 58
+                    repeat (min (max 1 (floor (- h 410) 58))
+                                (length violations))
+                    do (text renderer (+ x 20) row-y
+                             (fit-text (format nil "~A / ~A"
+                                               (policy-violation-severity item)
+                                               (or (policy-violation-package item) "GLOBAL"))
+                                       (- w 40) :scale 1.02)
+                             :scale 1.02
+                             :color (if (eq (policy-violation-severity item) :error)
+                                        '(255 112 132 255) '(255 202 92 255)))
+                       (text renderer (+ x 20) (+ row-y 25)
+                             (fit-text (policy-violation-message item)
+                                       (- w 40) :scale 0.98)
+                             :scale 0.98 :color +text-muted+))
+              (text renderer (+ x 20) (+ y 346) "NENHUMA VIOLAÇÃO"
+                    :scale 1.08 :color +accent+))))
+    (text renderer (+ x 20) (- (+ y h) 50)
+          (fit-text "7 FILTRA VIOLAÇÕES / X EXPORTA" (- w 40) :scale 0.98)
+          :scale 0.98 :color +accent+)
+    (text renderer (+ x 20) (- (+ y h) 24)
+          (fit-text "L VOLTA / F5 REAVALIA" (- w 40) :scale 0.98)
+          :scale 0.98 :color +accent+)))
+
+(defun draw-path-panel (renderer state x y w h)
+  "Desenha a rota arquitetural ativa e orienta a escolha de origem e destino."
+  (let* ((path (app-state-dependency-path state))
+         (origin (app-state-path-origin-name state))
+         (target (and path (car (last path)))))
+    (text renderer (+ x 20) (+ y 18) "CAMINHO ENTRE PACOTES"
+          :scale 1.62 :color +text-primary+)
+    (text renderer (+ x 20) (+ y 49) "MENOR ROTA DE CONECTIVIDADE"
+          :scale 1.08 :color +text-muted+)
+    (separator renderer (+ x 20) (+ y 77) (- (+ x w) 20))
+    (text renderer (+ x 20) (+ y 104) "ORIGEM" :scale 1.02 :color +text-muted+)
+    (text renderer (+ x 20) (+ y 132)
+          (fit-text (or origin "PRESSIONE M") (- w 40) :scale 1.24)
+          :scale 1.24 :color '(255 151 205 255))
+    (text renderer (+ x 20) (+ y 174) "DESTINO" :scale 1.02 :color +text-muted+)
+    (text renderer (+ x 20) (+ y 202)
+          (fit-text (if (> (length path) 1)
+                        (node-name target)
+                        "SELECIONE E PRESSIONE N")
+                    (- w 40) :scale 1.24)
+          :scale 1.24 :color +text-primary+)
+    (compact-summary-row renderer (+ x 20) (+ y 246) (- w 40)
+                         "SALTOS" (max 0 (1- (length path)))
+                         :color '(255 151 205 255))
+    (separator renderer (+ x 20) (+ y 278) (- (+ x w) 20))
+    (text renderer (+ x 20) (+ y 302) "ROTA"
+          :scale 1.16 :color +text-secondary+)
+    (if path
+        (loop for node in path
+              for index from 1
+              for row-y from (+ y 338) by 39
+              repeat (min (max 1 (floor (- h 410) 39)) (length path))
+              do (badge renderer (+ x 20) (- row-y 8) (format nil "~D" index)
+                        :scale 0.88 :foreground '(255 151 205 255)
+                        :background '(48 22 43 255) :border '(132 55 104 255))
+                 (text renderer (+ x 65) row-y
+                       (fit-text (node-name node) (- w 85) :scale 1.04)
+                       :scale 1.04 :color +text-secondary+))
+        (text renderer (+ x 20) (+ y 338) "NENHUMA ROTA ATIVA"
+              :scale 1.06 :color +text-muted+))
+    (text renderer (+ x 20) (- (+ y h) 76)
+          (fit-text "M ORIGEM / N CALCULA / Z LIMPA" (- w 40) :scale 0.96)
+          :scale 0.96 :color +accent+)
+    (text renderer (+ x 20) (- (+ y h) 50)
+          (fit-text "8 FILTRA ROTA / U EXPORTA" (- w 40) :scale 0.96)
+          :scale 0.96 :color +accent+)
+    (text renderer (+ x 20) (- (+ y h) 24)
+          (fit-text "A ROTA PODE ATRAVESSAR USE-PACKAGE INVERSO" (- w 40) :scale 0.92)
+          :scale 0.92 :color +text-muted+)))
+
 (defun draw-left-panel (renderer state x y w h)
   (panel renderer x y w h :accent +accent-dim+)
   (cond
+    ((app-state-path-p state)
+     (draw-path-panel renderer state x y w h))
+    ((app-state-policy-p state)
+     (draw-policy-panel renderer state x y w h))
     ((app-state-changes-p state)
      (draw-changes-panel renderer state x y w h))
     ((app-state-diagnostics-p state)
@@ -1425,7 +1782,7 @@ então solicita o encerramento da aplicação."
       (search-box-geometry width)
     (declare (ignore search-y search-width search-height))
     (text renderer 27 56
-          (fit-text "0.5.0 / OBSERVATÓRIO DA ARQUITETURA LISP"
+          (fit-text "0.6.0 / OBSERVATÓRIO DA ARQUITETURA LISP"
                     (- search-x 54.0d0) :scale 1.12)
           :scale 1.12 :color +text-muted+))
   (let* ((implementation (format nil "~A ~A"
@@ -1544,7 +1901,7 @@ então solicita o encerramento da aplicação."
 (defun draw-footer (renderer state graph-x graph-w height)
   (let* ((status (if (< (malkuth.sdl3:ticks) (app-state-status-until state))
                      (app-state-status state)
-                     "/ BUSCA / 1-6 FILTRAM / B BASE / T EVOLUÇÃO / X RELATÓRIOS"))
+                     "/ BUSCA / 1-8 FILTRAM / M-N ROTA / L POLÍTICAS / X RELATÓRIOS"))
          (label (fit-text status graph-w :scale 1.08)))
     (text renderer graph-x (- height 29) label
           :scale 1.08
@@ -1574,7 +1931,7 @@ então solicita o encerramento da aplicação."
          (x (/ (- width w) 2.0d0))
          (y (/ (- height h) 2.0d0)))
     (panel renderer x y w h :raised t :accent +accent-dim+)
-    (text renderer (+ x 32) (+ y 26) "GUIA DO MALKUTH 0.5.0"
+    (text renderer (+ x 32) (+ y 26) "GUIA DO MALKUTH 0.6.0"
           :scale 1.92 :color +accent+)
     (text renderer (+ x 32) (+ y 66)
           (fit-text "FILTRE, INVESTIGUE, FAVORITE E EXPORTE A ARQUITETURA DA IMAGEM ATIVA"
@@ -1585,7 +1942,7 @@ então solicita o encerramento da aplicação."
           :scale 1.32 :color +text-primary+)
     (loop for (number line) in
           '(("1" "PRESSIONE / OU CTRL+F E DIGITE PARTE DO NOME PARA ABRIR UM PACOTE")
-            ("2" "USE 1-6 PARA REDUZIR O MAPA A PROJETO, RISCO, FAVORITOS OU VIZINHANÇA")
+            ("2" "USE 1-8 PARA FILTRAR PROJETO, RISCO, VIOLAÇÕES OU CAMINHOS")
             ("3" "ALTERNE O INSPETOR COM I E EXPORTE A SELEÇÃO COM C"))
           for row-y from (+ y 162) by 47
           do (badge renderer (+ x 32) (- row-y 9) number
@@ -1603,12 +1960,12 @@ então solicita o encerramento da aplicação."
            (right (+ left column-w column-gap)))
       (help-row renderer left (+ y 378) "/" "BUSCA DE PACOTES"
                 "DIGITAR, NAVEGAR COM SETAS E ABRIR COM ENTER" column-w)
-      (help-row renderer left (+ y 438) "1-6" "FILTROS DO MAPA"
-                "TODOS, PROJETO, RISCO, FAVORITOS, VIZINHANÇA E ALTERADOS" column-w)
-      (help-row renderer left (+ y 498) "F" "FAVORITO PERSISTENTE"
-                "MARCAR OU DESMARCAR O PACOTE SELECIONADO" column-w)
-      (help-row renderer left (+ y 558) "B" "LINHA DE BASE"
-                "CAPTURAR O ESTADO PARA COMPARAÇÕES FUTURAS" column-w)
+      (help-row renderer left (+ y 438) "1-8" "FILTROS DO MAPA"
+                "TODOS, PROJETO, RISCO, FAVORITOS, ALTERADOS, POLÍTICAS E ROTA" column-w)
+      (help-row renderer left (+ y 498) "M/N" "CAMINHO ENTRE PACOTES"
+                "MARCAR A ORIGEM, SELECIONAR DESTINO E CALCULAR A MENOR ROTA" column-w)
+      (help-row renderer left (+ y 558) "L" "POLÍTICAS DO PROJETO"
+                "REVISAR REGRAS E VIOLAÇÕES CARREGADAS DO ARQUIVO" column-w)
       (help-row renderer right (+ y 378) "T" "PAINEL DE EVOLUÇÃO"
                 "VER REGRESSÕES, CICLOS E ALTERAÇÕES DE RISCO" column-w)
       (help-row renderer right (+ y 438) "Y" "EXPORTAR COMPARAÇÃO"
@@ -1619,7 +1976,7 @@ então solicita o encerramento da aplicação."
                 "SALVAR HISTÓRICO, RECONSTRUIR E COMPARAR" column-w))
     (separator renderer (+ x 32) (- (+ y h) 60) (- (+ x w) 32))
     (text renderer (+ x 32) (- (+ y h) 35)
-          "WASD CÂMERA / B BASE / T EVOLUÇÃO / Y EXPORTA / G DIAGNÓSTICOS / H VOLTA"
+          "WASD CÂMERA / M-N ROTA / L POLÍTICAS / B BASE / X EXPORTA / H VOLTA"
           :scale 1.02 :color +accent+)))
 
 ;;;; Composição responsiva e ciclo principal
@@ -1674,7 +2031,7 @@ então solicita o encerramento da aplicação."
                        (include-empty nil) (export-directory #P"output/")
                        (auto-orbit t) package-predicate user-package-predicate
                        (include-dependencies nil) (risk-threshold 20)
-                       (history-retention 20) initial-search
+                       (history-retention 20) initial-search policy-file
                        (initial-panel :overview))
   "Executa o observatório interativo da imagem ativa do Malkuth.
 
@@ -1682,7 +2039,9 @@ MAX-FRAMES atende aos testes de fumaça. EXPORT-DIRECTORY recebe relatórios e
 favoritos e histórico. RISK-THRESHOLD controla o filtro visual de risco sem
 alterar a pontuação arquitetural calculada pelo núcleo. HISTORY-RETENTION limita
 a quantidade de fotografias rotativas. INITIAL-SEARCH abre a caixa já
-preenchida e INITIAL-PANEL escolhe :OVERVIEW, :DIAGNOSTICS ou :CHANGES, o que também facilita inicializadores e testes visuais."
+preenchida. POLICY-FILE habilita regras arquiteturais declarativas. INITIAL-PANEL
+escolhe :OVERVIEW, :DIAGNOSTICS, :CHANGES ou :POLICY, facilitando também
+inicializadores e testes visuais."
   (let* ((snapshot (build-snapshot :include-empty include-empty
                                    :package-predicate package-predicate
                                    :user-package-predicate user-package-predicate
@@ -1696,6 +2055,7 @@ preenchida e INITIAL-PANEL escolhe :OVERVIEW, :DIAGNOSTICS ou :CHANGES, o que ta
                                 :export-directory (pathname export-directory)
                                 :risk-threshold (max 0 (min 100 risk-threshold))
                                 :history-retention (max 1 history-retention)
+                                :policy-file (and policy-file (pathname policy-file))
                                 :auto-orbit-p auto-orbit)))
     (validate-snapshot snapshot :errorp t)
     (when (zerop (length (snapshot-nodes snapshot)))
@@ -1711,11 +2071,15 @@ preenchida e INITIAL-PANEL escolhe :OVERVIEW, :DIAGNOSTICS ou :CHANGES, o que ta
     ;; Uma linha de base existente é carregada silenciosamente para que o filtro
     ;; de alterações e o painel de evolução estejam disponíveis imediatamente.
     (load-baseline! state)
+    (load-policies! state)
+    (refresh-trend-report! state)
     (ecase initial-panel
       (:overview nil)
       (:diagnostics (setf (app-state-diagnostics-p state) t))
       (:changes (when (app-state-baseline-snapshot state)
-                  (setf (app-state-changes-p state) t))))
+                  (setf (app-state-changes-p state) t)))
+      (:policy (when (app-state-policy-report state)
+                 (setf (app-state-policy-p state) t))))
     (when initial-search
       (setf (app-state-search-query state) (princ-to-string initial-search))
       (refresh-search-results! state))

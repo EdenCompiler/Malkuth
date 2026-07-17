@@ -4,7 +4,7 @@
 
 O projeto possui dois sistemas ASDF:
 
-- `malkuth/core`: reflexão, análise, arranjo, SVG e exportações; não depende de SDL3 ou CFFI;
+- `malkuth/core`: reflexão, análise, políticas, histórico, monitor, arranjo, SVG e exportações; não depende de SDL3 ou CFFI;
 - `malkuth`: acrescenta fonte vetorial, ponte CFFI, SDL3 e interface interativa.
 
 Use somente o núcleo em servidores, contêineres ou pipelines sem ambiente gráfico.
@@ -60,6 +60,12 @@ Núcleo sem interface:
 
 ```bash
 sbcl --script analyze.lisp
+```
+
+Monitor cooperativo:
+
+```bash
+MALKUTH_WATCH_ITERATIONS=1 sbcl --script watch.lisp
 ```
 
 ## 5. Carregamento pelo REPL

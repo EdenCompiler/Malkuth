@@ -83,3 +83,32 @@ Exportações finais usam substituição atômica. Um processo encerrado à for�
 ## Texto com acento aparece sem marca gráfica na interface
 
 A fonte vetorial 5x7 normaliza letras acentuadas para seus glifos-base. O texto continua legível, mas o acento visual pode ser omitido. Relatórios SVG e Markdown preservam os acentos completos.
+
+
+## O arquivo de políticas é recusado
+
+Confirme o cabeçalho, a versão e o equilíbrio dos parênteses:
+
+```lisp
+(:malkuth-policy t
+ :format-version 1
+ :rules (...))
+```
+
+Execute `sbcl --script analyze.lisp` com `MALKUTH_POLICY_FILE` para receber uma mensagem operacional sem abrir a interface. A leitura não executa formas Lisp.
+
+## O filtro 7 está vazio
+
+Isso significa que nenhuma regra carregada envolveu pacotes do instantâneo atual. Verifique `MALKUTH_POLICY_FILE`, o escopo e os padrões dos nomes. Avisos e erros aparecem no painel `L`.
+
+## Não existe caminho entre dois pacotes
+
+A rota depende das relações `USE-PACKAGE` presentes no instantâneo. Referências como `outro-pacote:funcao` não geram arestas. A interface usa conectividade `:either`; a API pode usar `:outgoing` ou `:incoming`.
+
+## O monitor não detecta mudanças de outro processo
+
+`watch.lisp` observa apenas sua própria imagem Lisp. Use `MALKUTH_BOOTSTRAP_FILE` para carregar a aplicação no processo do monitor ou incorpore `malkuth.monitor` diretamente ao serviço.
+
+## A tendência contém poucos pontos
+
+Ative `MALKUTH_SAVE_HISTORY=true` em execuções sucessivas e preserve `MALKUTH_HISTORY_DIR` entre jobs. Instantâneos com a mesma data e impressão digital podem representar o mesmo estado estrutural.

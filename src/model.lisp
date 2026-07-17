@@ -335,6 +335,90 @@ interfaces, testes e relatórios."
                             (symbol-kind-label (classify-symbol symbol))
                             (symbol-name symbol))))))
 
+
+;;;; Caminhos de dependência
+
+(defun node-designator-id (snapshot node-or-name)
+  "Converte um nó, nome de pacote ou identificador em um ID válido do instantâneo."
+  (etypecase node-or-name
+    (node (node-id node-or-name))
+    (string (let ((node (find-node-by-name snapshot node-or-name)))
+              (unless node
+                (error "Pacote inexistente no instantâneo: ~A" node-or-name))
+              (node-id node)))
+    (integer (if (<= 0 node-or-name (1- (length (snapshot-nodes snapshot))))
+                 node-or-name
+                 (error "Identificador de pacote fora do instantâneo: ~D" node-or-name)))))
+
+(defun dependency-adjacency (snapshot direction)
+  "Constrói uma lista de adjacência conforme DIRECTION.
+
+:OUTGOING segue USE-PACKAGE da origem para a dependência; :INCOMING percorre a
+relação inversa; :EITHER trata a topologia como não orientada para investigação."
+  (unless (member direction '(:outgoing :incoming :either))
+    (error "Direção de caminho desconhecida: ~S" direction))
+  (let* ((count (length (snapshot-nodes snapshot)))
+         (adjacency (make-array count :initial-element nil)))
+    (loop for edge across (snapshot-edges snapshot)
+          for from = (edge-from edge)
+          for to = (edge-to edge)
+          do (when (member direction '(:outgoing :either))
+               (pushnew to (aref adjacency from) :test #'=))
+             (when (member direction '(:incoming :either))
+               (pushnew from (aref adjacency to) :test #'=)))
+    (loop for index below count
+          do (setf (aref adjacency index) (sort (aref adjacency index) #'<)))
+    adjacency))
+
+(defun shortest-dependency-path-ids (snapshot from to &key (direction :outgoing))
+  "Retorna os IDs do menor caminho entre FROM e TO, incluindo as duas pontas.
+
+A busca em largura é determinística porque vizinhos são visitados por ID. NIL
+indica que não existe caminho segundo DIRECTION."
+  (let* ((source (node-designator-id snapshot from))
+         (target (node-designator-id snapshot to)))
+    (when (= source target)
+      (return-from shortest-dependency-path-ids (list source)))
+    (let* ((count (length (snapshot-nodes snapshot)))
+           (adjacency (dependency-adjacency snapshot direction))
+           (previous (make-array count :initial-element -1))
+           (visited (make-array count :element-type 'bit :initial-element 0))
+           (queue (make-array count :element-type 'fixnum))
+           (head 0)
+           (tail 0))
+      (setf (aref queue tail) source
+            tail (1+ tail)
+            (aref visited source) 1)
+      (loop while (< head tail)
+            for current = (aref queue head)
+            do (incf head)
+               (dolist (neighbor (aref adjacency current))
+                 (when (zerop (aref visited neighbor))
+                   (setf (aref visited neighbor) 1
+                         (aref previous neighbor) current
+                         (aref queue tail) neighbor
+                         tail (1+ tail))
+                   (when (= neighbor target)
+                     (return-from shortest-dependency-path-ids
+                       (loop with path = (list target)
+                             for cursor = target then (aref previous cursor)
+                             until (= cursor source)
+                             do (push (aref previous cursor) path)
+                             finally (return path)))))))
+      nil)))
+
+(defun shortest-dependency-path (snapshot from to &key (direction :outgoing))
+  "Retorna os nós do menor caminho de dependência entre FROM e TO."
+  (let ((ids (shortest-dependency-path-ids snapshot from to :direction direction))
+        (nodes (snapshot-nodes snapshot)))
+    (and ids (mapcar (lambda (id) (aref nodes id)) ids))))
+
+(defun dependency-path-edge-p (path edge)
+  "Informa se EDGE conecta dois IDs consecutivos de PATH em qualquer orientação."
+  (loop for (left right) on path while right
+        thereis (or (and (= left (edge-from edge)) (= right (edge-to edge)))
+                    (and (= right (edge-from edge)) (= left (edge-to edge))))))
+
 (defun fnv1a-update (hash octet)
   (logand #xffffffffffffffff (* (logxor hash octet) #x100000001b3)))
 

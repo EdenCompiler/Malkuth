@@ -77,7 +77,18 @@
                                    (malkuth.analysis:compare-architectures
                                     baseline-snapshot snapshot
                                     :old-analysis baseline-analysis
-                                    :new-analysis analysis))))
+                                    :new-analysis analysis)))
+           (policy-path (let ((value (env-value "MALKUTH_POLICY_FILE")))
+                          (and value (pathname value))))
+           (policy-rules (and policy-path
+                              (malkuth.policy:load-policy-file policy-path)))
+           (policy-report (and policy-rules
+                               (malkuth.policy:evaluate-policies
+                                snapshot policy-rules :analysis analysis)))
+           (history-directory
+             (pathname (or (env-value "MALKUTH_HISTORY_DIR")
+                           (namestring (merge-pathnames "historico/" output)))))
+           (trend-report nil))
       (when (zerop (length (malkuth.model:snapshot-nodes snapshot)))
         (error "O escopo de pacotes configurado não correspondeu a nenhum pacote carregado."))
       (malkuth.model:validate-snapshot snapshot :errorp t)
@@ -87,10 +98,27 @@
          baseline-snapshot snapshot output
          :old-analysis baseline-analysis :new-analysis analysis
          :diff architecture-diff))
+      (when policy-report
+        (malkuth.export:export-policy-bundle policy-report output))
+      (when (env-boolean "MALKUTH_SAVE_HISTORY" nil)
+        (malkuth.history:save-history-snapshot
+         snapshot history-directory
+         :retention (max 1 (env-integer "MALKUTH_HISTORY_RETENTION" 50))
+         :label "analise-ci"))
+      (when (env-boolean "MALKUTH_EXPORT_TRENDS" nil)
+        (setf trend-report
+              (malkuth.analysis:analyze-history
+               history-directory :current-snapshot snapshot
+               :limit (max 1 (env-integer "MALKUTH_TREND_LIMIT" 100))))
+        (malkuth.export:export-trend-bundle trend-report output))
       (format t "~&Relatório do MALKUTH concluído.~%Instantâneo: ~S~%Análise: ~S~%Saída: ~A~%"
               (malkuth.model:snapshot-summary snapshot)
               (malkuth.analysis:analysis-summary analysis)
               output)
+      (when policy-report
+        (format t "Políticas: ~S~%" (malkuth.policy:policy-report-summary policy-report)))
+      (when trend-report
+        (format t "Tendência: ~S~%" (malkuth.analysis:trend-report-summary trend-report)))
       ;; Políticas são opcionais. Valores negativos mantêm cada regra desativada.
       (let ((violations '())
             (minimum-health (env-integer "MALKUTH_MIN_HEALTH" -1))
@@ -145,6 +173,12 @@
                          (malkuth.analysis:architecture-diff-risk-increases
                           architecture-diff))
                         maximum-risk-increases)
+                violations))
+        (when (and policy-report
+                   (env-boolean "MALKUTH_FAIL_ON_POLICY" t)
+                   (not (malkuth.policy:policy-report-passed-p policy-report)))
+          (push (format nil "~D violação(ões) de política com severidade erro"
+                        (malkuth.policy:policy-report-error-count policy-report))
                 violations))
         (when violations
           (format *error-output* "~&FALHA NA POLÍTICA DO MALKUTH:~%~{  - ~A~%~}" (nreverse violations))

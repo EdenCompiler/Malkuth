@@ -368,3 +368,100 @@
           :resolved-cycles (length (architecture-diff-resolved-cycles diff))
           :risk-increases (length (architecture-diff-risk-increases diff))
           :risk-decreases (length (architecture-diff-risk-decreases diff)))))
+
+;;;; Série temporal do histórico arquitetural
+
+(defstruct trend-point
+  (created-at 0 :type integer)
+  (fingerprint "" :type string)
+  (packages 0 :type fixnum)
+  (dependencies 0 :type fixnum)
+  (symbols 0 :type fixnum)
+  (health-score 0 :type fixnum)
+  (cycles 0 :type fixnum)
+  (warnings 0 :type fixnum))
+
+(defstruct trend-report
+  (points nil :type list)
+  (health-min 0 :type fixnum)
+  (health-max 0 :type fixnum)
+  (health-delta 0 :type integer)
+  (package-delta 0 :type integer)
+  (dependency-delta 0 :type integer)
+  (symbol-delta 0 :type integer)
+  (ignored-files nil :type list))
+
+(defun snapshot-trend-point (snapshot &key analysis)
+  "Resume SNAPSHOT em um ponto compacto adequado a gráficos e históricos."
+  (let ((analysis (or analysis (analyze-snapshot snapshot))))
+    (make-trend-point
+     :created-at (snapshot-created-at snapshot)
+     :fingerprint (snapshot-fingerprint snapshot)
+     :packages (length (snapshot-nodes snapshot))
+     :dependencies (length (snapshot-edges snapshot))
+     :symbols (snapshot-total-symbols snapshot)
+     :health-score (analysis-report-health-score analysis)
+     :cycles (length (analysis-report-cycles analysis))
+     :warnings (length (analysis-report-warnings analysis)))))
+
+(defun make-trend-report-from-points (points &key ignored-files)
+  "Constrói estatísticas agregadas para POINTS já ordenados do mais antigo ao atual."
+  (let* ((points (sort (copy-list points) #'< :key #'trend-point-created-at))
+         (first (first points))
+         (last (car (last points)))
+         (health-values (mapcar #'trend-point-health-score points)))
+    (make-trend-report
+     :points points
+     :health-min (if points (reduce #'min health-values) 0)
+     :health-max (if points (reduce #'max health-values) 0)
+     :health-delta (if points (- (trend-point-health-score last)
+                                 (trend-point-health-score first)) 0)
+     :package-delta (if points (- (trend-point-packages last)
+                                  (trend-point-packages first)) 0)
+     :dependency-delta (if points (- (trend-point-dependencies last)
+                                     (trend-point-dependencies first)) 0)
+     :symbol-delta (if points (- (trend-point-symbols last)
+                                 (trend-point-symbols first)) 0)
+     :ignored-files ignored-files)))
+
+(defun analyze-history (directory &key current-snapshot (limit 100) (ignore-errors t))
+  "Analisa os instantâneos persistidos em DIRECTORY como uma série temporal.
+
+CURRENT-SNAPSHOT pode ser acrescentado ao fim sem gravá-lo. Arquivos corrompidos
+são listados em IGNORED-FILES quando IGNORE-ERRORS é verdadeiro; no modo estrito,
+o erro de leitura é propagado para CI e manutenção."
+  (let ((points '())
+        (ignored '())
+        (files (subseq (malkuth.history:history-files directory)
+                       0 (min (max 0 limit)
+                              (length (malkuth.history:history-files directory))))))
+    ;; HISTORY-FILES devolve os mais novos primeiro; a ordenação final restaura a
+    ;; ordem cronológica e elimina duplicatas de impressão digital.
+    (dolist (path files)
+      (handler-case
+          (push (snapshot-trend-point (malkuth.history:load-snapshot-file path)) points)
+        (error (condition)
+          (if ignore-errors
+              (push (cons path (princ-to-string condition)) ignored)
+              (error condition)))))
+    (when current-snapshot
+      (push (snapshot-trend-point current-snapshot) points))
+    (let ((seen (make-hash-table :test #'equal))
+          (unique '()))
+      (dolist (point (sort points #'< :key #'trend-point-created-at))
+        (unless (gethash (trend-point-fingerprint point) seen)
+          (setf (gethash (trend-point-fingerprint point) seen) t)
+          (push point unique)))
+      (make-trend-report-from-points (nreverse unique)
+                                     :ignored-files (nreverse ignored)))))
+
+(defun trend-report-summary (report)
+  "Resume a tendência arquitetural em propriedades estáveis para logs."
+  (list :points (length (trend-report-points report))
+        :health-min (trend-report-health-min report)
+        :health-max (trend-report-health-max report)
+        :health-delta (trend-report-health-delta report)
+        :package-delta (trend-report-package-delta report)
+        :dependency-delta (trend-report-dependency-delta report)
+        :symbol-delta (trend-report-symbol-delta report)
+        :ignored-files (length (trend-report-ignored-files report))))

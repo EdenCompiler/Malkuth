@@ -2,23 +2,29 @@
 
 ## Serviços Common Lisp de longa duração
 
-Uma imagem pode permanecer ativa por dias, receber recompilações, correções e plugins. O Malkuth observa o processo real, não somente o estado do repositório.
+Uma imagem pode permanecer ativa por dias, receber recompilações, correções e plugins. O Malkuth observa o processo real, não somente o estado do repositório. O monitor cooperativo pode registrar mudanças automaticamente dentro da própria aplicação.
 
-Fluxo recomendado:
+## Governança de arquitetura
 
-1. carregue uma configuração próxima da produção;
-2. carregue o Malkuth no mesmo processo;
-3. aplique o escopo do serviço;
-4. exporte antes e depois de uma alteração;
-5. revise pacotes e dependências inesperados.
+Versione `malkuth-politicas.sexp` junto ao código para transformar decisões em verificações executáveis. Exemplos:
+
+- domínio não depende da interface;
+- infraestrutura não é usada diretamente por módulos de apresentação;
+- plugins não acessam pacotes internos do hospedeiro;
+- pacotes de domínio não formam ciclos;
+- fan-out de adaptadores permanece abaixo de um limite.
+
+## Investigação de dependências transitivas
+
+Marque uma origem com `M`, selecione o destino e pressione `N`. A rota ajuda a responder por que dois subsistemas aparentemente distantes estão conectados e quais arestas precisam ser removidas durante uma refatoração.
 
 ## Revisão de limites entre pacotes
 
-Entrada alta indica contrato central. Saída alta indica conhecimento amplo de outras partes. Ciclos mostram subsistemas que não possuem direção clara de dependência. Esses dados ajudam a conduzir a conversa arquitetural.
+Entrada alta indica contrato central. Saída alta indica conhecimento amplo. Ciclos mostram subsistemas sem direção clara. O filtro de violações e os dossiês focados reduzem o mapa a evidências revisáveis.
 
 ## Motores de jogos e editores
 
-É especialmente útil em projetos com pacotes separados para:
+É especialmente útil em projetos separados em:
 
 ```text
 MOTOR.ECS
@@ -30,23 +36,23 @@ MOTOR.FISICA
 MOTOR.AUDIO
 ```
 
-O mapa pode revelar dependências indevidas do tempo de execução em ferramentas do editor, ou um pacote central que acumulou responsabilidades demais.
+Políticas de camadas podem impedir dependências do tempo de execução em ferramentas do editor. O histórico mostra se novas funcionalidades aumentam gradualmente o acoplamento do núcleo.
 
 ## Sistemas de plugins
 
-Capture um instantâneo antes e outro depois do carregamento. A atualização mostra novos pacotes e mudanças de contagem; o grafo mostra quais contratos do hospedeiro foram usados.
+Capture uma linha de base antes do carregamento. Depois use `F5`, o filtro `6` ou `watch.lisp` para identificar novos pacotes, dependências e ciclos. Políticas podem restringir quais contratos do hospedeiro cada plugin pode usar.
 
 ## Integração de bibliotecas
 
-Ao carregar um sistema do Quicklisp, o Malkuth ajuda a visualizar os pacotes que realmente apareceram e suas relações `USE-PACKAGE`. Ele complementa, mas não substitui, a inspeção das dependências ASDF.
+Ao carregar um sistema do Quicklisp, o Malkuth mostra os pacotes que realmente apareceram e suas relações `USE-PACKAGE`. Ele complementa, mas não substitui, a inspeção das dependências ASDF.
 
 ## Onboarding
 
-O SVG e o relatório Markdown dão a novos colaboradores uma visão inicial de fronteiras, centros, tamanhos e riscos sem exigir leitura completa do sistema.
+O SVG, o relatório Markdown e os caminhos focados dão a novos colaboradores uma visão inicial de fronteiras, centros, tamanhos e fluxos entre subsistemas.
 
-## Documentação e decisões de arquitetura
+## Tendência e auditoria
 
-Anexe o SVG e o relatório a registros de decisão arquitetural, revisões de projeto e mudanças importantes. Use o JSON para acompanhar métricas ao longo do tempo.
+Preserve os CSVs e JSONs de tendência em CI para acompanhar saúde, ciclos e crescimento do grafo. Isso permite discutir trajetória, não apenas uma fotografia isolada.
 
 ## Situações inadequadas
 
@@ -58,8 +64,4 @@ O Malkuth não substitui:
 - análise de vulnerabilidades;
 - verificador de tipos;
 - prova de segurança concorrente;
-- análise completa de todas as formas de acoplamento.
-
-## Investigação focada de um pacote
-
-Use o filtro de risco para encontrar candidatos, marque os mais importantes como favoritos e abra a aba de dependências. O modo de vizinhança remove ruído do restante da imagem; o comando `C` produz um dossiê pequeno o suficiente para anexar a uma revisão de código ou decisão arquitetural.
+- análise completa de referências totalmente qualificadas.

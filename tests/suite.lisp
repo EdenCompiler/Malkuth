@@ -164,10 +164,94 @@
     (check (file-contains-p focused-dot "digraph pacote_malkuth")
            "O DOT focado está malformado.")))
 
+
+(defun run-path-policy-and-trend-test ()
+  "Valida caminhos mínimos, políticas declarativas e série temporal."
+  (let* ((baseline (synthetic-baseline-snapshot))
+         (current (synthetic-cycle-snapshot))
+         (path (malkuth.model:shortest-dependency-path current "APP.A" "APP.C"))
+         (reverse-path (malkuth.model:shortest-dependency-path
+                        current "APP.C" "APP.A" :direction :incoming))
+         (rules (mapcar #'malkuth.policy:policy-from-record
+                        '((:id "a-sem-b" :type :forbid-dependency
+                           :severity :error :from "APP.A" :to "APP.B")
+                          (:id "sem-ciclo" :type :forbid-cycle
+                           :severity :warning :package "APP.*")
+                          (:id "fanout-zero" :type :max-fan-out
+                           :severity :warning :package "APP.*" :value 0))))
+         (analysis (malkuth.analysis:analyze-snapshot current))
+         (policy-report (malkuth.policy:evaluate-policies
+                         current rules :analysis analysis))
+         (directory (merge-pathnames "output/test-new-features/" (uiop:getcwd)))
+         (policy-path (merge-pathnames "politicas.sexp" directory))
+         (policy-files (malkuth.export:export-policy-bundle policy-report directory))
+         (path-files (malkuth.export:export-path-bundle current path directory))
+         (old-time (malkuth.model:snapshot-created-at baseline)))
+    (setf (malkuth.model:snapshot-created-at current) (+ old-time 60))
+    (malkuth.history:save-history-snapshot baseline directory :retention 10)
+    (let* ((trend (malkuth.analysis:analyze-history
+                   directory :current-snapshot current :limit 10))
+           (trend-files (malkuth.export:export-trend-bundle trend directory)))
+      (check (equal '("APP.A" "APP.B" "APP.C")
+                    (mapcar #'malkuth.model:node-name path))
+             "O menor caminho orientado APP.A -> APP.C está incorreto: ~S" path)
+      (check (equal '("APP.C" "APP.B" "APP.A")
+                    (mapcar #'malkuth.model:node-name reverse-path))
+             "O menor caminho de entrada APP.C -> APP.A está incorreto.")
+      (check (null (malkuth.model:shortest-dependency-path
+                    current "APP.A" "APP.ORPHAN" :direction :either))
+             "Não deveria existir caminho até APP.ORPHAN.")
+      (check (not (malkuth.policy:policy-report-passed-p policy-report))
+             "A dependência proibida deveria reprovar as políticas.")
+      (check (plusp (malkuth.policy:policy-report-error-count policy-report))
+             "Era esperada ao menos uma violação de severidade erro.")
+      (check (member "APP.A" (malkuth.policy:violating-package-names policy-report)
+                     :test #'string=)
+             "APP.A deveria aparecer entre os pacotes que violam políticas.")
+      (malkuth.policy:save-policy-file rules policy-path :label "teste")
+      (check (= (length rules) (length (malkuth.policy:load-policy-file policy-path)))
+             "O round-trip das políticas alterou a quantidade de regras.")
+      (check (>= (length (malkuth.analysis:trend-report-points trend)) 2)
+             "A tendência deveria conter ao menos dois pontos.")
+      (check (minusp (malkuth.analysis:trend-report-health-delta trend))
+             "O ciclo novo deveria produzir regressão na tendência de saúde.")
+      (dolist (pathname (append (list (getf policy-files :markdown)
+                                      (getf policy-files :json)
+                                      (getf path-files :markdown)
+                                      (getf path-files :dot))
+                                (list (getf trend-files :csv)
+                                      (getf trend-files :json)
+                                      (getf trend-files :markdown))))
+        (check (probe-file pathname) "Novo artefato ausente: ~A" pathname))
+      (check (file-contains-p (getf policy-files :json) "\"passed\":false")
+             "O JSON de políticas não registra a reprovação.")
+      (check (file-contains-p (getf path-files :markdown) "APP.C")
+             "O relatório de caminho não contém o destino.")
+      (check (file-contains-p (getf trend-files :json) "\"healthDelta\"")
+             "O JSON de tendência não contém healthDelta.")
+      (let* ((calls 0)
+             (monitor
+               (malkuth.monitor:make-architecture-monitor
+                :initial-snapshot baseline
+                :snapshot-builder
+                (lambda ()
+                  (incf calls)
+                  current)
+                :output-directory directory
+                :export-on-change nil)))
+        (multiple-value-bind (changed-p monitor-diff fresh)
+            (malkuth.monitor:monitor-poll! monitor)
+          (declare (ignore fresh))
+          (check changed-p "O monitor deveria detectar a mudança sintética.")
+          (check monitor-diff "O monitor não retornou a comparação arquitetural.")
+          (check (= 1 (malkuth.monitor:architecture-monitor-change-count monitor))
+                 "A contagem de mudanças do monitor está incorreta."))))))
+
 (defun run-tests ()
   (let ((snapshot (run-live-snapshot-test)))
     (run-analysis-test)
     (run-history-and-comparison-test)
+    (run-path-policy-and-trend-test)
     (run-export-test snapshot)
     (format t "~&Suíte de testes do MALKUTH aprovada: ~S~%"
             (malkuth.model:snapshot-summary snapshot))

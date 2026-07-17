@@ -598,3 +598,219 @@
                             :old-analysis old-analysis
                             :new-analysis new-analysis :diff diff)
     (list :markdown markdown :json json)))
+
+;;;; Relatórios de políticas arquiteturais
+
+(defun export-policy-markdown (report pathname)
+  "Exporta um relatório humano das políticas e violações avaliadas."
+  (atomic-write-file
+   pathname
+   (lambda (out)
+     (format out "# Políticas arquiteturais do Malkuth~%~%")
+     (format out "- Instantâneo: `~A`~%" (policy-report-fingerprint report))
+     (format out "- Regras avaliadas: **~D**~%" (length (policy-report-rules report)))
+     (format out "- Violações: **~D**~%" (length (policy-report-violations report)))
+     (format out "- Erros: **~D**; avisos: **~D**~%" (policy-report-error-count report)
+             (policy-report-warning-count report))
+     (format out "- Resultado: **~:[REPROVADO~;APROVADO~]**~%~%"
+             (policy-report-passed-p report))
+     (format out "## Regras~%~%")
+     (if (policy-report-rules report)
+         (dolist (rule (policy-report-rules report))
+           (format out "- `~A` — **~A** / ~A~%"
+                   (policy-rule-id rule)
+                   (string-upcase (symbol-name (policy-rule-severity rule)))
+                   (string-downcase (symbol-name (policy-rule-type rule)))))
+         (format out "Nenhuma regra foi configurada.~%"))
+     (format out "~%## Violações~%~%")
+     (if (policy-report-violations report)
+         (dolist (item (policy-report-violations report))
+           (format out "- **~A** `~A`~@[ em `~A`~]~@[ → `~A`~]: ~A~%"
+                   (string-upcase (symbol-name (policy-violation-severity item)))
+                   (policy-violation-rule-id item)
+                   (policy-violation-package item)
+                   (policy-violation-target item)
+                   (policy-violation-message item)))
+         (format out "Nenhuma violação foi encontrada.~%")))))
+
+(defun export-policy-json (report pathname)
+  "Exporta políticas e violações em JSON estável para CI e painéis externos."
+  (atomic-write-file
+   pathname
+   (lambda (out)
+     (format out "{\"schemaVersion\":\"1.0\",\"fingerprint\":")
+     (json-string (policy-report-fingerprint report) out)
+     (format out ",\"passed\":~:[false~;true~],\"summary\":{\"rules\":~D,\"violations\":~D,\"errors\":~D,\"warnings\":~D},\"violations\":"
+             (policy-report-passed-p report)
+             (length (policy-report-rules report))
+             (length (policy-report-violations report))
+             (policy-report-error-count report)
+             (policy-report-warning-count report))
+     (json-array
+      (policy-report-violations report)
+      (lambda (item stream)
+        (format stream "{\"ruleId\":")
+        (json-string (policy-violation-rule-id item) stream)
+        (format stream ",\"type\":")
+        (json-string (string-downcase (symbol-name (policy-violation-type item))) stream)
+        (format stream ",\"severity\":")
+        (json-string (string-downcase (symbol-name (policy-violation-severity item))) stream)
+        (when (policy-violation-package item)
+          (format stream ",\"package\":")
+          (json-string (policy-violation-package item) stream))
+        (when (policy-violation-target item)
+          (format stream ",\"target\":")
+          (json-string (policy-violation-target item) stream))
+        (format stream ",\"message\":")
+        (json-string (policy-violation-message item) stream)
+        (write-char #\} stream))
+      out)
+     (format out "}~%"))))
+
+(defun export-policy-bundle (report directory)
+  "Gera Markdown e JSON para um POLICY-REPORT."
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (merge-pathnames directory (uiop:getcwd))))
+         (markdown (merge-pathnames "malkuth-politicas.md" directory))
+         (json (merge-pathnames "malkuth-politicas.json" directory)))
+    (export-policy-markdown report markdown)
+    (export-policy-json report json)
+    (list :markdown markdown :json json)))
+
+;;;; Caminhos entre pacotes
+
+(defun export-path-markdown (snapshot path pathname &key (direction :either))
+  "Exporta um caminho de dependência já resolvido como documentação Markdown."
+  (unless path
+    (error "Não existe caminho para exportar."))
+  (atomic-write-file
+   pathname
+   (lambda (out)
+     (format out "# Caminho de dependência do Malkuth~%~%")
+     (format out "- Direção da busca: **~A**~%" (string-downcase (symbol-name direction)))
+     (format out "- Saltos: **~D**~%" (max 0 (1- (length path))))
+     (format out "- Instantâneo: `~A`~%~%" (snapshot-fingerprint snapshot))
+     (format out "## Rota~%~%")
+     (loop for node in path
+           for index from 1
+           do (format out "~D. `~A`~%" index (node-name node)))
+     (format out "~%## Observação~%~%")
+     (format out "No modo `either`, a rota representa conectividade arquitetural e pode atravessar uma relação no sentido inverso de `USE-PACKAGE`.~%"))))
+
+(defun export-path-dot (snapshot path pathname)
+  "Exporta somente os nós e arestas que formam PATH em Graphviz DOT."
+  (unless path
+    (error "Não existe caminho para exportar."))
+  (let* ((ids (mapcar #'node-id path))
+         (id-set (make-hash-table :test #'eql)))
+    (dolist (id ids) (setf (gethash id id-set) t))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "digraph caminho_malkuth {~%  graph [rankdir=LR, bgcolor=\"#07111e\"];~%")
+       (format out "  node [shape=box, style=\"rounded,filled\", fontname=\"monospace\", fontcolor=\"#edf4ff\", fillcolor=\"#0d1626\", color=\"#6cffc5\"];~%")
+       (format out "  edge [color=\"#ff72b5\", penwidth=3, arrowsize=0.8];~%")
+       (dolist (node path)
+         (format out "  n~D [label=\"~A\"];~%" (node-id node)
+                 (dot-escape (node-name node))))
+       (loop for (left right) on ids while right
+             for direct = (find-if (lambda (edge)
+                                     (and (= (edge-from edge) left)
+                                          (= (edge-to edge) right)))
+                                   (coerce (snapshot-edges snapshot) 'list))
+             do (if direct
+                    (format out "  n~D -> n~D;~%" left right)
+                    (format out "  n~D -> n~D [dir=back, style=dashed];~%" right left)))
+       (format out "}~%")))))
+
+(defun export-path-bundle (snapshot path directory &key (direction :either))
+  "Gera Markdown e DOT para o caminho arquitetural PATH."
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (merge-pathnames directory (uiop:getcwd))))
+         (markdown (merge-pathnames "malkuth-caminho.md" directory))
+         (dot (merge-pathnames "malkuth-caminho.dot" directory)))
+    (export-path-markdown snapshot path markdown :direction direction)
+    (export-path-dot snapshot path dot)
+    (list :markdown markdown :dot dot)))
+
+;;;; Tendências históricas
+
+(defun export-trend-csv (report pathname)
+  "Exporta a série temporal arquitetural em CSV."
+  (atomic-write-file
+   pathname
+   (lambda (out)
+     (csv-row '("created_at" "fingerprint" "packages" "dependencies" "symbols"
+                "health" "cycles" "warnings") out)
+     (dolist (point (trend-report-points report))
+       (csv-row (list (iso-8601-time (trend-point-created-at point))
+                      (trend-point-fingerprint point)
+                      (trend-point-packages point)
+                      (trend-point-dependencies point)
+                      (trend-point-symbols point)
+                      (trend-point-health-score point)
+                      (trend-point-cycles point)
+                      (trend-point-warnings point))
+                out)))))
+
+(defun export-trend-json (report pathname)
+  "Exporta a tendência histórica em JSON."
+  (atomic-write-file
+   pathname
+   (lambda (out)
+     (format out "{\"schemaVersion\":\"1.0\",\"summary\":{\"points\":~D,\"healthMin\":~D,\"healthMax\":~D,\"healthDelta\":~D,\"packageDelta\":~D,\"dependencyDelta\":~D,\"symbolDelta\":~D},\"points\":"
+             (length (trend-report-points report))
+             (trend-report-health-min report) (trend-report-health-max report)
+             (trend-report-health-delta report) (trend-report-package-delta report)
+             (trend-report-dependency-delta report) (trend-report-symbol-delta report))
+     (json-array
+      (trend-report-points report)
+      (lambda (point stream)
+        (format stream "{\"createdAt\":")
+        (json-string (iso-8601-time (trend-point-created-at point)) stream)
+        (format stream ",\"fingerprint\":")
+        (json-string (trend-point-fingerprint point) stream)
+        (format stream ",\"packages\":~D,\"dependencies\":~D,\"symbols\":~D,\"health\":~D,\"cycles\":~D,\"warnings\":~D}"
+                (trend-point-packages point) (trend-point-dependencies point)
+                (trend-point-symbols point) (trend-point-health-score point)
+                (trend-point-cycles point) (trend-point-warnings point)))
+      out)
+     (format out ",\"ignoredFiles\":~D}~%" (length (trend-report-ignored-files report))))))
+
+(defun export-trend-markdown (report pathname)
+  "Exporta um relatório legível da evolução arquitetural."
+  (atomic-write-file
+   pathname
+   (lambda (out)
+     (format out "# Tendência arquitetural do Malkuth~%~%")
+     (format out "- Pontos analisados: **~D**~%" (length (trend-report-points report)))
+     (format out "- Saúde mínima/máxima: **~D / ~D**~%"
+             (trend-report-health-min report) (trend-report-health-max report))
+     (format out "- Variação de saúde: **~@D**~%" (trend-report-health-delta report))
+     (format out "- Variação de pacotes: **~@D**~%" (trend-report-package-delta report))
+     (format out "- Variação de ligações: **~@D**~%" (trend-report-dependency-delta report))
+     (format out "- Variação de símbolos: **~@D**~%~%" (trend-report-symbol-delta report))
+     (format out "| Data | Saúde | Pacotes | Ligações | Símbolos | Ciclos | Avisos |~%")
+     (format out "|---|---:|---:|---:|---:|---:|---:|~%")
+     (dolist (point (trend-report-points report))
+       (format out "| ~A | ~D | ~D | ~D | ~D | ~D | ~D |~%"
+               (iso-8601-time (trend-point-created-at point))
+               (trend-point-health-score point) (trend-point-packages point)
+               (trend-point-dependencies point) (trend-point-symbols point)
+               (trend-point-cycles point) (trend-point-warnings point)))
+     (when (trend-report-ignored-files report)
+       (format out "~%## Arquivos ignorados~%~%")
+       (dolist (entry (trend-report-ignored-files report))
+         (format out "- `~A`: ~A~%" (car entry) (cdr entry)))))))
+
+(defun export-trend-bundle (report directory)
+  "Gera CSV, JSON e Markdown para uma série temporal arquitetural."
+  (let* ((directory (uiop:ensure-directory-pathname
+                     (merge-pathnames directory (uiop:getcwd))))
+         (csv (merge-pathnames "malkuth-tendencia.csv" directory))
+         (json (merge-pathnames "malkuth-tendencia.json" directory))
+         (markdown (merge-pathnames "malkuth-tendencia.md" directory)))
+    (export-trend-csv report csv)
+    (export-trend-json report json)
+    (export-trend-markdown report markdown)
+    (list :csv csv :json json :markdown markdown)))

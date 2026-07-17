@@ -2,7 +2,7 @@
 
 ## Pacote completo
 
-`malkuth.export:export-bundle` e `X` produzem:
+`malkuth.export:export-bundle` e `X` produzem os artefatos centrais:
 
 ```text
 malkuth.svg
@@ -14,6 +14,16 @@ malkuth-pacotes.csv
 malkuth-dependencias.csv
 ```
 
+Quando há dados disponíveis, `X` também acrescenta:
+
+```text
+malkuth-politicas.md
+malkuth-politicas.json
+malkuth-tendencia.csv
+malkuth-tendencia.json
+malkuth-tendencia.md
+```
+
 ## Comparação contra linha de base
 
 `Y` e `malkuth.export:export-comparison-bundle` produzem:
@@ -23,15 +33,45 @@ malkuth-comparacao.md
 malkuth-comparacao.json
 ```
 
-O relatório registra variação de saúde, pacotes adicionados/removidos/alterados, ciclos novos ou resolvidos e mudanças de risco.
+O relatório registra variação de saúde, pacotes adicionados, removidos e alterados, ciclos novos ou resolvidos e mudanças de risco.
 
-## CSV
+## Políticas arquiteturais
 
-`malkuth-pacotes.csv` contém uma linha por pacote com contagens, fan-in, fan-out, grau e risco. `malkuth-dependencias.csv` contém origem, destino e peso de cada relação `USE-PACKAGE`. Ambos usam campos entre aspas e podem ser abertos em planilhas ou ferramentas de BI.
+`malkuth.export:export-policy-bundle` produz:
+
+```text
+malkuth-politicas.md
+malkuth-politicas.json
+```
+
+Os arquivos contêm identificação da regra, tipo, severidade, pacotes envolvidos, mensagem e estado global de aprovação.
+
+## Caminho entre pacotes
+
+`U` e `malkuth.export:export-path-bundle` produzem:
+
+```text
+malkuth-caminho.md
+malkuth-caminho.dot
+```
+
+O Markdown explica a sequência. O DOT representa somente os nós e arestas relevantes, preservando a direção real de `USE-PACKAGE`.
+
+## Tendência histórica
+
+`malkuth.export:export-trend-bundle` produz:
+
+```text
+malkuth-tendencia.csv
+malkuth-tendencia.json
+malkuth-tendencia.md
+```
+
+Cada ponto registra data, impressão digital, saúde, pacotes, dependências, símbolos, ciclos e avisos. Arquivos históricos inválidos são ignorados e contabilizados no relatório.
 
 ## Dossiê do pacote
 
-`malkuth.export:export-package-bundle` e `C` produzem dois arquivos com nome normalizado:
+`malkuth.export:export-package-bundle` e `C` produzem:
 
 ```text
 pacote-<nome>.md
@@ -40,25 +80,15 @@ pacote-<nome>.dot
 
 O Markdown reúne conteúdo, métricas, risco, participação em ciclos, dependências, dependentes e até 200 símbolos próprios. O DOT contém somente a seleção e sua vizinhança direta.
 
+## CSV
+
+`malkuth-pacotes.csv` contém uma linha por pacote com contagens, fan-in, fan-out, grau e risco. `malkuth-dependencias.csv` contém origem, destino e peso de cada relação `USE-PACKAGE`. Os campos são protegidos por aspas e podem ser abertos em planilhas ou ferramentas de BI.
+
 ## JSON
 
-O esquema atual é `1.1`. As chaves permanecem em inglês para compatibilidade:
+O esquema do instantâneo continua em `1.1`. Relatórios de política, caminho, comparação e tendência possuem seus próprios esquemas versionados.
 
-```json
-{
-  "schemaVersion": "1.1",
-  "generatedAt": "...",
-  "fingerprint": "...",
-  "implementation": "...",
-  "summary": {},
-  "health": {},
-  "packages": [],
-  "dependencies": [],
-  "cycles": [],
-  "orphans": [],
-  "warnings": []
-}
-```
+As chaves permanecem em inglês para compatibilidade com automações.
 
 ## Escrita atômica
 
@@ -71,4 +101,8 @@ Artefatos são escritos em arquivos temporários vizinhos e depois substituem o 
 (malkuth.export:export-csv-bundle instantaneo #P"build/malkuth/")
 (malkuth.export:export-package-bundle
  instantaneo pacote #P"build/malkuth/" :analysis analise)
+(malkuth.export:export-policy-bundle relatorio-politicas #P"build/malkuth/")
+(malkuth.export:export-path-bundle
+ instantaneo caminho #P"build/malkuth/" :direction :either)
+(malkuth.export:export-trend-bundle relatorio-tendencia #P"build/malkuth/")
 ```

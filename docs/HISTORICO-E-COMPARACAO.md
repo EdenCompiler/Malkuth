@@ -1,4 +1,4 @@
-# Histórico e comparação arquitetural
+# Histórico, comparação e tendências
 
 ## Linha de base interativa
 
@@ -16,7 +16,7 @@ O arquivo persistido é:
 output/malkuth-linha-de-base.sexp
 ```
 
-A leitura usa `*READ-EVAL*` desativado e valida IDs, arestas e contagens antes de aceitar o documento.
+A leitura usa `*READ-EVAL*` desativado e valida identificadores, arestas e contagens antes de aceitar o documento.
 
 ## Painel de evolução
 
@@ -26,7 +26,8 @@ O painel apresenta:
 - variação da quantidade de avisos;
 - pacotes adicionados, removidos e alterados;
 - ciclos novos e ciclos resolvidos;
-- maiores aumentos de risco local.
+- maiores aumentos de risco local;
+- direção geral da tendência histórica disponível.
 
 Pressione `6` para mostrar no mapa somente pacotes adicionados ou alterados. Esses pacotes recebem um anel magenta mesmo em outros filtros.
 
@@ -44,7 +45,39 @@ A quantidade de arquivos é limitada por:
 MALKUTH_HISTORY_RETENTION=50 sbcl --script run.lisp
 ```
 
-O padrão é 20. O histórico guarda a topologia e as contagens, não funções executáveis, valores de variáveis ou todo o heap Lisp.
+O histórico guarda a topologia e as contagens, não funções executáveis, valores de variáveis ou todo o heap Lisp.
+
+## Análise de tendência
+
+O Malkuth ordena os instantâneos por data e cria uma série com:
+
+- saúde;
+- quantidade de pacotes;
+- relações de dependência;
+- símbolos;
+- ciclos;
+- avisos;
+- impressão digital de cada ponto.
+
+O pacote completo e `analyze.lisp` podem gerar:
+
+```text
+malkuth-tendencia.csv
+malkuth-tendencia.json
+malkuth-tendencia.md
+```
+
+API:
+
+```lisp
+(defparameter *tendencia*
+  (malkuth.analysis:analyze-history
+   #P"output/historico/"
+   :limit 100))
+
+(malkuth.analysis:trend-report-summary *tendencia*)
+(malkuth.export:export-trend-bundle *tendencia* #P"output/")
+```
 
 ## Exportação da comparação
 
@@ -77,18 +110,21 @@ API equivalente:
 Na primeira execução, crie ou atualize a linha de base:
 
 ```bash
-MALKUTH_BASELINE_FILE="$PWD/build/malkuth-baseline.sexp" \
+MALKUTH_BASELINE_FILE="$PWD/ci/malkuth-baseline.sexp" \
 MALKUTH_UPDATE_BASELINE=true \
 sbcl --script analyze.lisp
 ```
 
-Em execuções posteriores, compare sem atualizar automaticamente:
+Em execuções posteriores, compare e alimente a tendência:
 
 ```bash
-MALKUTH_BASELINE_FILE="$PWD/build/malkuth-baseline.sexp" \
+MALKUTH_BASELINE_FILE="$PWD/ci/malkuth-baseline.sexp" \
 MALKUTH_FAIL_ON_NEW_CYCLES=true \
 MALKUTH_MAX_HEALTH_REGRESSION=5 \
 MALKUTH_MAX_RISK_INCREASES=3 \
+MALKUTH_HISTORY_DIR="$PWD/build/historico/" \
+MALKUTH_SAVE_HISTORY=true \
+MALKUTH_EXPORT_TRENDS=true \
 sbcl --script analyze.lisp
 ```
 

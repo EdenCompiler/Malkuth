@@ -110,7 +110,7 @@
            (width (env-integer "MALKUTH_WIDTH" 1600 :minimum 1280))
            (height (env-integer "MALKUTH_HEIGHT" 900 :minimum 760)))
       (format *error-output*
-              "MALKUTH 0.5.0: ~Dx~D / saída ~A~@[ / escopo ~{~A~^, ~}~]~%"
+              "MALKUTH 0.6.0: ~Dx~D / saída ~A~@[ / escopo ~{~A~^, ~}~]~%"
               width height output scope-prefixes)
       (malkuth.app:run
        :width width
@@ -127,8 +127,11 @@
                                :diagnostics)
                               ((member value '("evolucao" "changes") :test #'string=)
                                :changes)
+                              ((member value '("politicas" "policy") :test #'string=)
+                               :policy)
                               (t :overview)))
        :initial-search (env-value "MALKUTH_INITIAL_SEARCH")
+       :policy-file (env-value "MALKUTH_POLICY_FILE")
        :export-directory (pathname output)
        :package-predicate (prefix-predicate scope-prefixes)
        :user-package-predicate (prefix-predicate user-prefixes)

@@ -1,5 +1,18 @@
 # Histórico de alterações
 
+## 0.6.0 — Políticas, caminhos e monitoramento
+
+- Motor de políticas arquiteturais declarativas em S-expression segura.
+- Regras para dependências proibidas ou obrigatórias, limites, ciclos e camadas.
+- Painel de políticas, filtro `7` e anéis de violação no mapa.
+- Menor caminho entre pacotes com direções `:outgoing`, `:incoming` e `:either`.
+- Painel de rota, filtro `8`, destaque de arestas e exportação Markdown/DOT.
+- Análise de tendências a partir do histórico persistido.
+- Exportação de tendências em CSV, JSON e Markdown.
+- Monitor cooperativo `malkuth.monitor` e inicializador `watch.lisp`.
+- Integração de políticas e tendências com `analyze.lisp` e o pacote completo.
+- Novos testes de políticas, caminhos, tendências, monitor e exportações.
+
 ## 0.5.0 — Linha de base, histórico e regressões
 
 - Persistência segura de instantâneos estruturais e histórico rotativo.
