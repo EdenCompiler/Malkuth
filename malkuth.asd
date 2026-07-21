@@ -20,7 +20,7 @@
 
 (asdf:defsystem "malkuth"
   :description "Interface interativa SDL3 do Malkuth."
-  :author "OpenAI para Bruno Dos Santos Umpierre"
+  :author "Bruno"
   :license "MIT"
   :version "0.6.1"
   :in-order-to ((asdf:test-op (asdf:test-op "malkuth/tests")))
