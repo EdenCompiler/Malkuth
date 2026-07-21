@@ -1,0 +1,25 @@
+# Artefatos compilados do Common Lisp
+*.fasl
+*.fas
+*.lib
+*.lx64fsl
+*.dx64fsl
+*.x86f
+*.ufsl
+
+# Relatórios e capturas gerados pelo Malkuth
+/output/
+/build/
+
+# Arquivos temporários de exportação atômica
+.*-*.tmp
+
+# Arquivos locais de editores e sistema operacional
+*~
+.#*
+.DS_Store
+
+# Configurações e estado local opcionais
+/malkuth-politicas.sexp
+/malkuth-linha-de-base.sexp
+/malkuth-favoritos.sexp

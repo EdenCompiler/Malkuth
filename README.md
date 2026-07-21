@@ -1,24 +1,309 @@
-# Malkuth 0.6.0
+# Malkuth 0.6.1 — English
+
+**Common Lisp image observatory, package-level architecture analyzer, and regression monitor.**
+
+> Documentation: [English](doc-en/INDEX.md) · [Português (Brasil)](doc-ptbr/INDICE.md)
+
+Malkuth inspects the running Lisp process and turns its package structure into a navigable map. Each package becomes a node, `USE-PACKAGE` relationships become edges, and owned symbols, functions, macros, classes, generic functions, and variables are classified. The same snapshot powers the SDL3 interface, architecture analysis, declarative policies, history, monitoring, and CI-ready reports.
+
+![Malkuth interface](assets/interface.png)
+
+## What is new in 0.6.1
+
+- documentation reorganized into `doc-en/` and `doc-ptbr/`;
+- complete English and Brazilian Portuguese documentation trees;
+- bilingual root README with equivalent project coverage in both languages;
+- source-code comment audit to keep comments in Brazilian Portuguese;
+- removal of the obsolete `docs/` tree and duplicated documentation assets;
+- documentation links validated after the reorganization.
+
+## Main capabilities
+
+- reflection over the running Common Lisp image;
+- three-dimensional package and dependency map;
+- Unicode text search with direct package selection;
+- symbol and direct-relationship inspection;
+- fan-in, fan-out, connectivity, local risk, and heuristic health metrics;
+- strongly connected component and cycle detection;
+- persistent baseline, rotating history, and regression comparison;
+- versionable declarative architecture policies;
+- shortest dependency paths between packages;
+- continuous monitoring of the same long-running Lisp image;
+- package-prefix scoping with optional direct boundary dependencies;
+- atomic SVG, JSON, DOT, Markdown, and CSV exports;
+- portable core that does not require SDL3 or CFFI.
+
+## Requirements
+
+For the core, monitoring, and reports: a Common Lisp implementation with ASDF, preferably SBCL.
+
+For the interactive interface: CFFI and SDL3 3.2 or newer.
+
+```bash
+sudo apt install sbcl cl-cffi libsdl3-0 libsdl3-dev graphviz
+```
+
+## Quick start
+
+Interactive interface:
+
+```bash
+sbcl --script run.lisp
+```
+
+Headless architecture analysis:
+
+```bash
+sbcl --script analyze.lisp
+```
+
+Continuous monitor:
+
+```bash
+MALKUTH_SCOPE_PREFIXES='MEU-APP' \
+MALKUTH_WATCH_INTERVAL=5 \
+sbcl --script watch.lisp
+```
+
+SVG only:
+
+```bash
+sbcl --script render-svg.lisp
+```
+
+## Controls
+
+| Input | Action |
+|---|---|
+| Point / click | Preview or select a package |
+| `/` or `Ctrl+F` | Activate package search |
+| `Up / Down`, `Tab`, `Enter` | Navigate and open search results |
+| `1` | Show all packages |
+| `2` | Show project code |
+| `3` | Show packages above the risk threshold |
+| `4` | Show favorites |
+| `5` or `V` | Show the direct neighborhood |
+| `6` | Show packages changed since baseline |
+| `7` | Show packages that violate policies |
+| `8` | Show only the active architecture path |
+| `F` | Add/remove favorite |
+| `M` | Mark current package as path source |
+| `N` | Compute the shortest path to the selected package |
+| `Z` | Clear the active path |
+| `U` | Export the path in Markdown and DOT |
+| `L` | Open/close the policies panel |
+| `B` | Capture current state as baseline |
+| `T` | Open/close the evolution panel |
+| `Y` | Export comparison against baseline |
+| `I` | Toggle symbols/dependencies in the inspector |
+| `C` | Export selected-package dossier |
+| `F5` | Rebuild, reevaluate, and compare the image |
+| `G` | Toggle diagnostics |
+| `X` | Export the complete bundle |
+| `P` | Quick SVG export |
+| `J / K` | Previous/next package in current filter |
+| `Page Up / Page Down` | Scroll active inspector tab |
+| `W A S D` | Orbit camera |
+| `Q / E` | Zoom out/in |
+| `Space` | Pause/resume layout |
+| `R` | Reheat/reorganize graph |
+| `O` | Toggle automatic orbit |
+| `H` | Help |
+| `Esc` | Close search/help, then exit |
+
+## Architecture policies
+
+Copy and adapt the example policy file:
+
+```bash
+cp malkuth-politicas.exemplo.sexp malkuth-politicas.sexp
+```
+
+Start the interface with project scope and policies:
+
+```bash
+MALKUTH_SCOPE_PREFIXES='MEU-APP' \
+MALKUTH_USER_PREFIXES='MEU-APP' \
+MALKUTH_POLICY_FILE="$PWD/malkuth-politicas.sexp" \
+sbcl --script run.lisp
+```
+
+Example:
+
+```lisp
+(:id "domain-without-ui"
+ :type :forbid-dependency
+ :severity :error
+ :from "MEU-APP.DOMINIO*"
+ :to "MEU-APP.UI*"
+ :message "The domain layer must not depend on the UI.")
+```
+
+Available rule types:
+
+```text
+:forbid-dependency  :require-dependency
+:max-fan-out        :max-fan-in
+:max-risk           :max-symbols
+:forbid-cycle       :layer-order
+```
+
+See [Architecture policies](doc-en/POLICIES.md).
+
+## Paths between packages
+
+1. Select the source package and press `M`.
+2. Find or select the target.
+3. Press `N` to compute a shortest connectivity path.
+4. Press `8` to isolate the path and `U` to export it.
+
+The interactive route uses undirected connectivity to answer “how are these subsystems connected?”. The API also supports outgoing and incoming directed paths.
+
+See [Dependency paths](doc-en/PATHS.md).
+
+## History and trends
+
+`F5` saves the previous snapshot in `output/historico/`. A complete export can include:
+
+```text
+malkuth-tendencia.csv
+malkuth-tendencia.json
+malkuth-tendencia.md
+```
+
+The time series records health, package count, edges, symbols, cycles, and warnings. See [History and comparison](doc-en/HISTORY-AND-COMPARISON.md).
+
+## Continuous monitoring
+
+`watch.lisp` watches the current Lisp image and exports a comparison whenever its architecture fingerprint changes. It is useful for servers that load plugins, recompile modules, or apply runtime patches.
+
+```bash
+MALKUTH_BOOTSTRAP_FILE="$PWD/iniciar-meu-app.lisp" \
+MALKUTH_SCOPE_PREFIXES='MEU-APP' \
+MALKUTH_OUTPUT_DIR="$PWD/build/malkuth-monitor/" \
+MALKUTH_WATCH_INTERVAL=10 \
+sbcl --script watch.lisp
+```
+
+See [Continuous monitoring](doc-en/MONITORING.md).
+
+## Continuous integration
+
+```bash
+MALKUTH_SCOPE_PREFIXES='MEU-APP' \
+MALKUTH_USER_PREFIXES='MEU-APP' \
+MALKUTH_OUTPUT_DIR="$PWD/build/malkuth/" \
+MALKUTH_POLICY_FILE="$PWD/malkuth-politicas.sexp" \
+MALKUTH_FAIL_ON_POLICY=true \
+MALKUTH_BASELINE_FILE="$PWD/ci/malkuth-baseline.sexp" \
+MALKUTH_FAIL_ON_NEW_CYCLES=true \
+MALKUTH_MAX_HEALTH_REGRESSION=5 \
+MALKUTH_SAVE_HISTORY=true \
+MALKUTH_EXPORT_TRENDS=true \
+sbcl --script analyze.lisp
+```
+
+Exit codes: `0` success, `1` operational/configuration error, `2` architecture gate or policy failure.
+
+## Programmatic API
+
+```lisp
+(asdf:load-system "malkuth/core")
+
+(defparameter *snapshot* (malkuth.model:build-snapshot))
+(defparameter *analysis* (malkuth.analysis:analyze-snapshot *snapshot*))
+
+(malkuth.model:shortest-dependency-path
+ *snapshot* "MEU-APP.UI" "MEU-APP.DOMINIO"
+ :direction :either)
+
+(defparameter *rules*
+  (malkuth.policy:load-policy-file #P"malkuth-politicas.sexp"))
+
+(defparameter *policy-result*
+  (malkuth.policy:evaluate-policies
+   *snapshot* *rules* :analysis *analysis*))
+
+(malkuth.export:export-policy-bundle
+ *policy-result* #P"build/malkuth/")
+```
+
+Embedded monitor:
+
+```lisp
+(defparameter *monitor*
+  (malkuth.monitor:make-architecture-monitor
+   :output-directory #P"build/monitor/"))
+
+(malkuth.monitor:monitor-poll! *monitor*)
+```
+
+## Project structure
+
+```text
+src/model.lisp        reflection, search, relationships, paths, validation
+src/analysis.lisp     metrics, cycles, comparison, trends
+src/history.lisp      snapshot persistence and retention
+src/policy.lisp       declarative architecture policies
+src/export.lisp       global/focused reports, policies, paths, trends
+src/monitor.lisp      cooperative image monitoring
+src/layout.lisp       deterministic 3D layout
+src/svg.lisp          self-contained SVG dashboard
+src/vector-font.lisp  embedded 5x7 vector font
+src/sdl3.lisp         minimal CFFI bridge to SDL3
+src/app.lisp          interface, search, filters, policies, paths
+analyze.lisp          headless analysis and CI gates
+watch.lisp            continuous headless monitor
+run.lisp              interactive launcher
+doc-en/               English documentation
+doc-ptbr/             Brazilian Portuguese documentation
+assets/                shared non-language-specific assets
+```
+
+## Validation
+
+```bash
+make test
+make analyze
+make smoke
+make validate
+```
+
+## Limitations
+
+- The graph models `USE-PACKAGE`; fully qualified symbol references do not create edges.
+- A path in `:either` mode shows connectivity and may traverse an edge in the reverse direction.
+- Risk, health, and policies are review aids, not proofs of correctness or security.
+- The monitor observes changes inside the same Lisp image; it does not inspect another process.
+- Reports and history may contain internal package and symbol names.
+- Linux is the primary validation platform for this release.
+
+Complete English documentation: [doc-en/INDEX.md](doc-en/INDEX.md).
+
+## License
+
+MIT. The official legal text is in [LICENSE](LICENSE).
+
+---
+
+# Malkuth 0.6.1 — Português (Brasil)
 
 **Observatório da imagem Common Lisp, analisador de arquitetura por pacotes e monitor de regressões.**
 
+> Documentação: [Português (Brasil)](doc-ptbr/INDICE.md) · [English](doc-en/INDEX.md)
+
 O Malkuth examina o processo Lisp em execução e transforma seus pacotes em um mapa navegável. Cada pacote vira um nó; relações de `USE-PACKAGE` viram arestas; símbolos, funções, macros, classes e variáveis são classificados. A mesma fotografia alimenta a interface SDL3, análises arquiteturais, políticas declarativas, histórico e relatórios para CI.
 
-![Interface do Malkuth](docs/imagens/interface.png)
+![Interface do Malkuth](assets/interface.png)
 
-## Novidades da versão 0.6.0
+## Novidades da versão 0.6.1
 
-- políticas arquiteturais declarativas em S-expression segura;
-- regras de dependência proibida ou obrigatória, limites de acoplamento, risco e tamanho;
-- ordem de camadas e proibição de ciclos por padrão de pacote;
-- painel de políticas, filtro `7` e marcação visual das violações;
-- menor caminho entre dois pacotes, destacado diretamente no grafo;
-- filtro `8`, painel de rota e exportação do caminho em Markdown e DOT;
-- série temporal do histórico com saúde, pacotes, ligações, símbolos, ciclos e avisos;
-- exportação da tendência em CSV, JSON e Markdown;
-- monitor cooperativo para detectar mudanças em imagens Lisp de longa duração;
-- inicializador `watch.lisp` para serviços e sistemas que carregam plugins dinamicamente;
-- pacote completo `X` agora inclui tendências e políticas quando disponíveis.
+- documentação reorganizada em `doc-ptbr/` e `doc-en/`;
+- documentação completa em português do Brasil e em inglês;
+- README bilíngue com duas metades completas e equivalentes;
+- auditoria dos comentários do código-fonte para mantê-los em pt-BR;
+- remoção da árvore antiga `docs/` e de artefatos documentais duplicados;
+- validação dos links após a reorganização.
 
 ## Capacidades principais
 
@@ -149,7 +434,7 @@ Tipos disponíveis:
 :forbid-cycle       :layer-order
 ```
 
-Consulte [Políticas arquiteturais](docs/POLITICAS.md).
+Consulte [Políticas arquiteturais](doc-ptbr/POLITICAS.md).
 
 ## Caminhos entre pacotes
 
@@ -160,7 +445,7 @@ Consulte [Políticas arquiteturais](docs/POLITICAS.md).
 
 A rota interativa usa conectividade não orientada para responder “como estes subsistemas estão ligados?”. A API também suporta caminhos orientados de saída e entrada.
 
-Consulte [Caminhos de dependência](docs/CAMINHOS.md).
+Consulte [Caminhos de dependência](doc-ptbr/CAMINHOS.md).
 
 ## Histórico e tendências
 
@@ -172,7 +457,7 @@ malkuth-tendencia.json
 malkuth-tendencia.md
 ```
 
-A série registra saúde, pacotes, ligações, símbolos, ciclos e avisos. Consulte [Histórico e comparação](docs/HISTORICO-E-COMPARACAO.md).
+A série registra saúde, pacotes, ligações, símbolos, ciclos e avisos. Consulte [Histórico e comparação](doc-ptbr/HISTORICO-E-COMPARACAO.md).
 
 ## Monitor contínuo
 
@@ -186,7 +471,7 @@ MALKUTH_WATCH_INTERVAL=10 \
 sbcl --script watch.lisp
 ```
 
-Consulte [Monitoramento contínuo](docs/MONITORAMENTO.md).
+Consulte [Monitoramento contínuo](doc-ptbr/MONITORAMENTO.md).
 
 ## Integração contínua
 
@@ -275,7 +560,7 @@ make validate
 - Relatórios e históricos contêm nomes internos de pacotes e símbolos.
 - O Linux é a principal plataforma de validação desta versão.
 
-A documentação completa está em [docs/INDICE.md](docs/INDICE.md).
+A documentação completa em português está em [doc-ptbr/INDICE.md](doc-ptbr/INDICE.md).
 
 ## Licença
 

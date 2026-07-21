@@ -1,5 +1,7 @@
 # Índice da documentação
 
+> Documentação em inglês: [doc-en/INDEX.md](../doc-en/INDEX.md).
+
 | Documento | Conteúdo |
 |---|---|
 | [Instalação](INSTALACAO.md) | Dependências, Quicklisp e SDL3 |
@@ -17,5 +19,6 @@
 | [Desenvolvimento](DESENVOLVIMENTO.md) | ASDF, testes e extensão do código |
 | [Casos de uso](CASOS-DE-USO.md) | Serviços, plugins, motores, revisão e governança |
 | [Solução de problemas](SOLUCAO-DE-PROBLEMAS.md) | CFFI, SDL3, escopo, políticas e relatórios |
+| [Histórico de versões](HISTORICO-DE-VERSOES.md) | Alterações por versão |
 
 O [README](../README.md) contém a visão geral e o roteiro de início rápido.

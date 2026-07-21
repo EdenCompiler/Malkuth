@@ -60,7 +60,7 @@ Os testes SDL3 exercitam abertura da interface e entrada textual Unicode em um s
 4. Produza violações com identificação estável e pacotes envolvidos.
 5. Acrescente serialização nos relatórios Markdown e JSON.
 6. Crie testes sintéticos de aprovação e reprovação.
-7. Documente o formato em `docs/POLITICAS.md`.
+7. Documente o formato em `doc-ptbr/POLITICAS.md` e `doc-en/POLICIES.md`.
 
 ## Adicionar uma regra heurística de análise
 

@@ -1,6 +1,6 @@
 .PHONY: run svg analyze watch test smoke watch-smoke validate package clean help
 
-VERSAO := 0.6.0
+VERSAO := 0.6.1
 PACOTE := malkuth-$(VERSAO)
 
 help:
@@ -14,7 +14,7 @@ help:
 	  'make watch-smoke - executa uma iteração do monitor' \
 	  'make validate    - executa test, analyze, watch-smoke e smoke' \
 	  'make clean       - remove artefatos gerados' \
-	  'make package     - cria malkuth-0.6.0.zip'
+	  'make package     - cria malkuth-0.6.1.zip'
 
 run:
 	sbcl --script run.lisp

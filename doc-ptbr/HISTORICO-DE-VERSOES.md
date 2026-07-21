@@ -1,5 +1,15 @@
 # Histórico de alterações
 
+## 0.6.1 — Documentação bilíngue e limpeza
+
+- Documentação reorganizada em `doc-ptbr/` e `doc-en/`.
+- Árvore completa de documentação em português do Brasil e inglês.
+- README dividido em duas metades completas: inglês e pt-BR.
+- Imagem da interface movida para `assets/` para evitar duplicação entre idiomas.
+- Auditoria dos comentários do código-fonte, mantidos em pt-BR.
+- Remoção da árvore obsoleta `docs/` e do teste SDL duplicado não utilizado.
+- Atualização dos links, versão ASDF e empacotamento para 0.6.1.
+
 ## 0.6.0 — Políticas, caminhos e monitoramento
 
 - Motor de políticas arquiteturais declarativas em S-expression segura.
