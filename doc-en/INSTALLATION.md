@@ -36,8 +36,8 @@ Or install CFFI through the operating system so ASDF can discover it directly.
 ## 4. First run
 
 ```bash
-unzip malkuth-0.6.1.zip
-cd malkuth-0.6.1
+unzip malkuth-0.7.0.zip
+cd malkuth-0.7.0
 sbcl --script run.lisp
 ```
 

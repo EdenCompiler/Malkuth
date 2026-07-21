@@ -13,6 +13,7 @@
 | `MALKUTH_INCLUDE_EMPTY` | `false` | Inclui pacotes sem símbolos próprios |
 | `MALKUTH_AUTO_ORBIT` | `true` | Inicia órbita automática |
 | `MALKUTH_RISK_THRESHOLD` | `20` | Limiar do filtro visual de risco, 0–100 |
+| `MALKUTH_IMPACT_THRESHOLD` | `5` | Mínimo de dependentes transitivos exibidos pelo filtro `9` |
 | `MALKUTH_INITIAL_SEARCH` | ausente | Abre a busca com uma consulta inicial |
 | `MALKUTH_INITIAL_PANEL` | `visao-geral` | `visao-geral`, `diagnosticos`, `evolucao` ou `politicas` |
 | `MALKUTH_POLICY_FILE` | ausente | Arquivo de políticas arquiteturais |

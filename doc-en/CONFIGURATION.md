@@ -13,6 +13,7 @@
 | `MALKUTH_INCLUDE_EMPTY` | `false` | Includes packages without owned symbols |
 | `MALKUTH_AUTO_ORBIT` | `true` | Starts automatic orbit |
 | `MALKUTH_RISK_THRESHOLD` | `20` | Visual risk-filter threshold, 0–100 |
+| `MALKUTH_IMPACT_THRESHOLD` | `5` | Minimum transitive dependents shown by filter `9` |
 | `MALKUTH_INITIAL_SEARCH` | unset | Opens search with an initial query |
 | `MALKUTH_INITIAL_PANEL` | `visao-geral` | `visao-geral`, `diagnosticos`, `evolucao` or `politicas` |
 | `MALKUTH_POLICY_FILE` | unset | Architecture policy file |

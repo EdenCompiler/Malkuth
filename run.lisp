@@ -110,7 +110,7 @@
            (width (env-integer "MALKUTH_WIDTH" 1600 :minimum 1280))
            (height (env-integer "MALKUTH_HEIGHT" 900 :minimum 760)))
       (format *error-output*
-              "MALKUTH 0.6.0: ~Dx~D / saída ~A~@[ / escopo ~{~A~^, ~}~]~%"
+              "MALKUTH 0.7.0: ~Dx~D / saída ~A~@[ / escopo ~{~A~^, ~}~]~%"
               width height output scope-prefixes)
       (malkuth.app:run
        :width width
@@ -120,6 +120,7 @@
        :include-empty (env-boolean "MALKUTH_INCLUDE_EMPTY" nil)
        :auto-orbit (env-boolean "MALKUTH_AUTO_ORBIT" t)
        :risk-threshold (env-integer "MALKUTH_RISK_THRESHOLD" 20 :minimum 0 :maximum 100)
+       :impact-threshold (env-integer "MALKUTH_IMPACT_THRESHOLD" 5 :minimum 0)
        :history-retention (env-integer "MALKUTH_HISTORY_RETENTION" 20 :minimum 1 :maximum 500)
        :initial-panel (let ((value (string-downcase
                                     (or (env-value "MALKUTH_INITIAL_PANEL") "visao-geral"))))

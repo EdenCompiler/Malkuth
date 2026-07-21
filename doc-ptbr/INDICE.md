@@ -10,6 +10,7 @@
 | [Filtros e favoritos](FILTROS-E-FAVORITOS.md) | Foco local, persistência e risco visual |
 | [Políticas arquiteturais](POLITICAS.md) | Regras declarativas, camadas, limites e CI |
 | [Caminhos de dependência](CAMINHOS.md) | Menor rota entre pacotes e exportação focada |
+| [Impacto e integrações](IMPACTO-E-INTEGRACOES.md) | Alcance transitivo, SARIF, Prometheus e Mermaid |
 | [Histórico e comparação](HISTORICO-E-COMPARACAO.md) | Linha de base, evolução, tendências e regressões |
 | [Monitoramento contínuo](MONITORAMENTO.md) | Observação cooperativa de imagens Lisp de longa duração |
 | [Arquitetura](ARQUITETURA.md) | Componentes, fluxo e decisões de projeto |

@@ -68,6 +68,18 @@ Update only after the architecture change is reviewed and intentionally accepted
 
 Start by collecting reports without blocking builds. Observe normal score variation, warnings and cycles. Then add regression-only gates, followed by declarative policies for critical boundaries.
 
+
+## SARIF and code scanning
+
+Every complete bundle writes `malkuth.sarif`. The file follows SARIF 2.1.0 and represents architecture warnings and optional policy violations as logical package locations, so CI systems can archive or upload it to code-scanning interfaces.
+
+```bash
+MALKUTH_SCOPE_PREFIXES='MEU-APP' \
+MALKUTH_POLICY_FILE="$PWD/malkuth-politicas.sexp" \
+sbcl --script analyze.lisp
+# upload build output/malkuth.sarif with the CI provider's SARIF action
+```
+
 ## Exit codes
 
 - `0`: analysis approved;

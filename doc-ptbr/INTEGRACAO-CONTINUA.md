@@ -80,6 +80,18 @@ Preserve o histórico entre jobs para acompanhar a trajetória do projeto. O pac
 7. Promova regras estáveis para `:error`.
 8. Atualize a base apenas em uma mudança arquitetural aprovada.
 
+
+## SARIF e code scanning
+
+Todo pacote completo grava `malkuth.sarif`. O arquivo segue SARIF 2.1.0 e representa avisos arquiteturais e violações opcionais de políticas como localizações lógicas de pacotes. Assim, o CI pode arquivá-lo ou enviá-lo para interfaces de code scanning.
+
+```bash
+MALKUTH_SCOPE_PREFIXES='MEU-APP' \
+MALKUTH_POLICY_FILE="$PWD/malkuth-politicas.sexp" \
+sbcl --script analyze.lisp
+# envie output/malkuth.sarif com a ação SARIF do provedor de CI
+```
+
 ## Códigos de saída
 
 - `0`: análise e políticas aprovadas;

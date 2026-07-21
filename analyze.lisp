@@ -92,7 +92,7 @@
       (when (zerop (length (malkuth.model:snapshot-nodes snapshot)))
         (error "O escopo de pacotes configurado não correspondeu a nenhum pacote carregado."))
       (malkuth.model:validate-snapshot snapshot :errorp t)
-      (malkuth.export:export-bundle snapshot output :analysis analysis)
+      (malkuth.export:export-bundle snapshot output :analysis analysis :policy-report policy-report)
       (when architecture-diff
         (malkuth.export:export-comparison-bundle
          baseline-snapshot snapshot output

@@ -12,6 +12,10 @@ malkuth-report.md
 malkuth-manifest.txt
 malkuth-pacotes.csv
 malkuth-dependencias.csv
+malkuth.sarif
+malkuth.prom
+malkuth.mmd
+malkuth-impacto.md
 malkuth-politicas.md
 malkuth-politicas.json
 malkuth-tendencia.csv
@@ -39,12 +43,21 @@ Trend exports contain time-ordered health, package count, edge count, symbols, c
 
 `C` exports a focused Markdown and DOT report for the selected package, including metrics, dependencies, dependents, cycle participation and owned-symbol samples.
 
+## Production integrations
+
+- `malkuth.sarif`: SARIF 2.1.0 findings using logical package locations;
+- `malkuth.prom`: Prometheus exposition-format health and per-package metrics;
+- `malkuth.mmd`: Mermaid `flowchart LR` dependency graph;
+- `malkuth-impacto.md`: package ranking by transitive dependents, instability and risk.
+
 ## CSV
 
-- `malkuth-pacotes.csv`: one row per package with architectural metrics;
+- `malkuth-pacotes.csv`: one row per package with direct and transitive architectural metrics;
 - `malkuth-dependencias.csv`: directed `USE-PACKAGE` origin/destination pairs.
 
 ## JSON
+
+Snapshot schema `1.2` adds `transitiveDependencies`, `transitiveDependents`, `blastRadius`, and `instability` per package.
 
 JSON keys are stable English API identifiers even when human-facing documentation is localized. This avoids breaking downstream automation.
 
@@ -55,10 +68,13 @@ Automation-oriented exports are written to a temporary file in the destination d
 ## API
 
 ```lisp
-(malkuth.export:export-report-bundle snapshot #P"build/malkuth/")
+(malkuth.export:export-bundle snapshot #P"build/malkuth/")
 (malkuth.export:export-csv-bundle snapshot #P"build/malkuth/")
 (malkuth.export:export-comparison-bundle baseline snapshot #P"build/malkuth/")
 (malkuth.export:export-policy-bundle policy-result #P"build/malkuth/")
+(malkuth.export:export-sarif snapshot #P"build/malkuth/malkuth.sarif")
+(malkuth.export:export-prometheus snapshot #P"build/malkuth/malkuth.prom")
+(malkuth.export:export-mermaid snapshot #P"build/malkuth/malkuth.mmd")
 ```
 
 See exported package definitions in `src/package.lisp` for the complete public surface.

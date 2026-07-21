@@ -12,6 +12,7 @@
 | `6` | Packages changed since baseline |
 | `7` | Packages involved in policy violations |
 | `8` | Packages in the active architecture path |
+| `9` | Packages at or above the transitive impact threshold |
 
 The selected package is kept visible when possible so switching filters does not destroy navigation context.
 
@@ -40,3 +41,13 @@ Accepted range: `0` to `100`. This value controls the visual risk filter only; i
 ## Changed since baseline
 
 After a baseline is captured with `B`, filter `6` isolates added or modified packages. Changed packages receive a magenta ring and may simultaneously carry favorite, policy or path indicators.
+
+## Transitive impact threshold
+
+Filter `9` uses the package blast radius: the number of packages that depend directly or indirectly on that package. Configure the minimum with:
+
+```bash
+MALKUTH_IMPACT_THRESHOLD=10 sbcl --script run.lisp
+```
+
+The default is `5`. The selected package remains visible even when it is below the threshold.

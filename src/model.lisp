@@ -9,7 +9,7 @@
 
 ;; A versão do esquema identifica a forma lógica dos instantâneos exportados.
 ;; Ela só deve mudar quando leitores externos precisarem adaptar sua interpretação.
-(defparameter +snapshot-schema-version+ "1.1")
+(defparameter +snapshot-schema-version+ "1.2")
 
 ;; Cada NODE representa um pacote da imagem. As contagens descrevem o conteúdo
 ;; do pacote; posição, velocidade e projeção pertencem somente à visualização.
@@ -369,6 +369,62 @@ relação inversa; :EITHER trata a topologia como não orientada para investiga�
     (loop for index below count
           do (setf (aref adjacency index) (sort (aref adjacency index) #'<)))
     adjacency))
+
+(defun reachable-node-ids (snapshot start &key (direction :outgoing) max-depth)
+  "Retorna todos os nós alcançáveis a partir de START segundo DIRECTION.
+
+START pode ser nó, nome ou ID. O nó inicial não é incluído no resultado.
+MAX-DEPTH limita a quantidade de saltos quando fornecido; NIL percorre toda a
+componente alcançável. A saída é ordenada pelo nome do pacote para permanecer
+estável entre execuções."
+  (when (and max-depth (minusp max-depth))
+    (error "MAX-DEPTH deve ser NIL ou um inteiro não negativo: ~S" max-depth))
+  (let* ((source (node-designator-id snapshot start))
+         (nodes (snapshot-nodes snapshot))
+         (count (length nodes))
+         (adjacency (dependency-adjacency snapshot direction))
+         (visited (make-array count :element-type 'bit :initial-element 0))
+         (depths (make-array count :element-type 'fixnum :initial-element 0))
+         (queue (make-array count :element-type 'fixnum))
+         (head 0)
+         (tail 0)
+         (found '()))
+    (setf (aref queue tail) source
+          tail (1+ tail)
+          (aref visited source) 1)
+    (loop while (< head tail)
+          for current = (aref queue head)
+          for depth = (aref depths current)
+          do (incf head)
+             (when (or (null max-depth) (< depth max-depth))
+               (dolist (neighbor (aref adjacency current))
+                 (when (zerop (aref visited neighbor))
+                   (setf (aref visited neighbor) 1
+                         (aref depths neighbor) (1+ depth)
+                         (aref queue tail) neighbor
+                         tail (1+ tail))
+                   (push neighbor found)))))
+    (sort found #'string< :key (lambda (id) (node-name (aref nodes id))))))
+
+(defun node-transitive-dependency-ids (snapshot node-or-name &key max-depth)
+  "Retorna IDs de todas as dependências transitivas de NODE-OR-NAME."
+  (reachable-node-ids snapshot node-or-name :direction :outgoing :max-depth max-depth))
+
+(defun node-transitive-dependent-ids (snapshot node-or-name &key max-depth)
+  "Retorna IDs de todos os pacotes que dependem transitivamente de NODE-OR-NAME."
+  (reachable-node-ids snapshot node-or-name :direction :incoming :max-depth max-depth))
+
+(defun node-transitive-dependencies (snapshot node-or-name &key max-depth)
+  "Retorna os nós usados transitivamente por NODE-OR-NAME."
+  (ids-to-nodes snapshot
+                (node-transitive-dependency-ids snapshot node-or-name
+                                                :max-depth max-depth)))
+
+(defun node-transitive-dependents (snapshot node-or-name &key max-depth)
+  "Retorna os nós impactados transitivamente por alterações em NODE-OR-NAME."
+  (ids-to-nodes snapshot
+                (node-transitive-dependent-ids snapshot node-or-name
+                                               :max-depth max-depth)))
 
 (defun shortest-dependency-path-ids (snapshot from to &key (direction :outgoing))
   "Retorna os IDs do menor caminho entre FROM e TO, incluindo as duas pontas.

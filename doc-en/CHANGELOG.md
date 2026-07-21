@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0 — Transitive impact and production integrations
+
+- Transitive dependency and dependent queries with optional depth limits.
+- Blast-radius and instability metrics for every package.
+- Visual impact filter `9` with `MALKUTH_IMPACT_THRESHOLD`.
+- SARIF 2.1.0 export with architecture warnings and policy violations.
+- Prometheus exposition-format metrics for global and per-package monitoring.
+- Mermaid dependency-graph export for Markdown documentation.
+- Dedicated transitive impact ranking report.
+- Snapshot JSON schema 1.2 plus expanded CSV transitive-impact columns.
+
 ## 0.6.1 — Bilingual documentation and cleanup
 
 - Reorganized documentation into `doc-ptbr/` and `doc-en/`.

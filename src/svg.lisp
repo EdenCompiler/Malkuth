@@ -124,7 +124,7 @@
 
       ;; Cabeçalho.
       (emit-text out 26 39 "MALKUTH" :size 34 :fill "#7cffcf" :weight 820)
-      (emit-text out 27 67 "0.6.0 / OBSERVATÓRIO DA ARQUITETURA DA IMAGEM" :size 14 :fill "#8198b8" :weight 650)
+      (emit-text out 27 67 "0.7.0 / OBSERVATÓRIO DA ARQUITETURA DA IMAGEM" :size 14 :fill "#8198b8" :weight 650)
       (let ((implementation (fit-svg-text
                              (format nil "~A ~A" (lisp-implementation-type)
                                      (lisp-implementation-version))
@@ -267,8 +267,10 @@
                                 :anchor (if left-p "end" "start")))))))
       (format out "</g>~%")
 
-      ;; Inspetor.
-      (let ((color (color-for-kind (node-kind selected))))
+      ;; Inspetor. O selo de impacto mantém a exportação estática alinhada às
+      ;; métricas disponíveis na interface interativa e nos relatórios tabulares.
+      (let ((color (color-for-kind (node-kind selected)))
+            (metric (metrics-for-node analysis selected)))
         (emit-text out (+ right-x 20) (+ graph-y 35) "DETALHES DO PACOTE" :size 20
                    :fill "#edf4ff" :weight 760)
         (emit-text out (+ right-x 20) (+ graph-y 63) "SELECIONADO NA IMAGEM ATIVA" :size 13
@@ -280,6 +282,11 @@
                         :size 22 :fill color :weight 780)
         (emit-pill out (+ right-x 20) (+ graph-y 140) (role-label (node-kind selected))
                    :width 132 :fill "#121f33" :stroke color :foreground color)
+        (emit-pill out (+ right-x 164) (+ graph-y 140)
+                   (format nil "RISCO ~D / IMPACTO ~D"
+                           (node-metrics-risk-score metric)
+                           (node-metrics-blast-radius metric))
+                   :width 196 :fill "#121f33" :stroke "#365171" :foreground "#b2c5df")
         (emit-text out (+ right-x 20) (+ graph-y 196) "CONTEÚDO DO PACOTE" :size 15
                    :fill "#b2c5df" :weight 720)
         (let ((stats `(("SÍMBOLOS INTERNOS" ,(node-internal selected))

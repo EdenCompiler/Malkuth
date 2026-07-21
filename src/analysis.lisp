@@ -12,6 +12,13 @@
   (fan-out 0 :type fixnum)
   (total-degree 0 :type fixnum)
   (symbols 0 :type fixnum)
+  ;; Métricas transitivas revelam impacto arquitetural que fan-in/fan-out direto
+  ;; não capturam. BLAST-RADIUS representa quantos pacotes podem ser afetados
+  ;; indiretamente por uma alteração neste pacote.
+  (transitive-dependencies 0 :type fixnum)
+  (transitive-dependents 0 :type fixnum)
+  (blast-radius 0 :type fixnum)
+  (instability 0 :type fixnum)
   (risk-score 0 :type fixnum))
 
 (defstruct analysis-warning
@@ -175,12 +182,23 @@
                                  (wide (make-warning-for-fan-out node out)))
                              (when large (push large warnings))
                              (when wide (push wide warnings))))
-                         (make-node-metrics
-                          :node-id id :name (node-name node)
-                          :fan-in in :fan-out out :total-degree (+ in out)
-                          :symbols (+ (node-internal node) (node-external node))
-                          :risk-score (risk-score-for node in out
-                                                     (gethash (node-name node) cyclic-names)))))
+                         (let* ((transitive-dependencies
+                                  (length (node-transitive-dependency-ids snapshot node)))
+                                (transitive-dependents
+                                  (length (node-transitive-dependent-ids snapshot node)))
+                                (degree (+ in out))
+                                (instability (if (zerop degree) 0
+                                                 (round (* 100 (/ out degree))))))
+                           (make-node-metrics
+                            :node-id id :name (node-name node)
+                            :fan-in in :fan-out out :total-degree degree
+                            :symbols (+ (node-internal node) (node-external node))
+                            :transitive-dependencies transitive-dependencies
+                            :transitive-dependents transitive-dependents
+                            :blast-radius transitive-dependents
+                            :instability instability
+                            :risk-score (risk-score-for node in out
+                                                       (gethash (node-name node) cyclic-names))))))
                      nodes)))
           (let* ((orphans
                    (sort (loop for metric across metrics
@@ -220,6 +238,41 @@
                 (string node-or-name))))
     (find name (analysis-report-metrics report)
           :key #'node-metrics-name :test #'string-equal)))
+
+(defun critical-metrics (report &key (limit 10) (minimum-blast-radius 1))
+  "Retorna os pacotes com maior raio de impacto arquitetural.
+
+A ordenação prioriza dependentes transitivos, risco local e grau total. LIMIT
+controla o tamanho da lista e MINIMUM-BLAST-RADIUS remove pacotes sem impacto
+significativo. O nome funciona como desempate estável."
+  (let ((items
+          (remove-if (lambda (metric)
+                       (< (node-metrics-blast-radius metric) minimum-blast-radius))
+                     (coerce (analysis-report-metrics report) 'list))))
+    (setf items
+          (stable-sort items
+                       (lambda (left right)
+                         (or (> (node-metrics-blast-radius left)
+                                (node-metrics-blast-radius right))
+                             (and (= (node-metrics-blast-radius left)
+                                     (node-metrics-blast-radius right))
+                                  (> (node-metrics-risk-score left)
+                                     (node-metrics-risk-score right)))
+                             (and (= (node-metrics-blast-radius left)
+                                     (node-metrics-blast-radius right))
+                                  (= (node-metrics-risk-score left)
+                                     (node-metrics-risk-score right))
+                                  (> (node-metrics-total-degree left)
+                                     (node-metrics-total-degree right)))
+                             (and (= (node-metrics-blast-radius left)
+                                     (node-metrics-blast-radius right))
+                                  (= (node-metrics-risk-score left)
+                                     (node-metrics-risk-score right))
+                                  (= (node-metrics-total-degree left)
+                                     (node-metrics-total-degree right))
+                                  (string< (node-metrics-name left)
+                                           (node-metrics-name right)))))))
+    (subseq items 0 (min limit (length items)))))
 
 (defun analysis-summary (report)
   (list :health-score (analysis-report-health-score report)

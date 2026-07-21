@@ -7,7 +7,7 @@
 3. Opcionalmente carregue um arquivo de políticas arquiteturais.
 4. Abra o Malkuth ou execute a análise sem interface.
 5. Pressione `/` ou `Ctrl+F` para localizar diretamente um pacote.
-6. Use os filtros `2`, `3` e `7` para localizar código próprio, risco e violações.
+6. Use os filtros `2`, `3`, `7` e `9` para localizar código próprio, risco, violações e alto impacto transitivo.
 7. Selecione um pacote e use `I` para alternar símbolos e dependências.
 8. Use `V` para isolar sua vizinhança e `F` para guardar pontos de interesse.
 9. Para explicar conectividade, marque uma origem com `M`, selecione o destino e pressione `N`.
@@ -72,6 +72,6 @@ A aba **Símbolos** lista conteúdo próprio classificado. A aba **Dependências
 
 ## Paginação e navegação
 
-`Page Up` e `Page Down` rolam a aba ativa. `J`, `K` e `Tab` navegam somente pelos pacotes aceitos pelo filtro atual.
+`Page Up` e `Page Down` rolam a aba ativa. `J`, `K` e `Tab` navegam somente pelos pacotes aceitos pelo filtro atual. O filtro `9` isola pacotes cujo raio de impacto alcança `MALKUTH_IMPACT_THRESHOLD`.
 
 Consulte [Políticas](POLITICAS.md), [Caminhos](CAMINHOS.md), [Histórico](HISTORICO-E-COMPARACAO.md), [Busca](BUSCA.md) e [Filtros](FILTROS-E-FAVORITOS.md).

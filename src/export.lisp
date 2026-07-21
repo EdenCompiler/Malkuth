@@ -115,11 +115,16 @@
             (write-char #\, stream) (json-key "name" stream) (json-string (node-name node) stream)
             (write-char #\, stream) (json-key "kind" stream)
             (json-string (string-downcase (symbol-name (node-kind node))) stream)
-            (format stream ",\"internal\":~D,\"external\":~D,\"functions\":~D,\"generics\":~D,\"macros\":~D,\"classes\":~D,\"variables\":~D,\"fanIn\":~D,\"fanOut\":~D,\"riskScore\":~D"
+            (format stream ",\"internal\":~D,\"external\":~D,\"functions\":~D,\"generics\":~D,\"macros\":~D,\"classes\":~D,\"variables\":~D,\"fanIn\":~D,\"fanOut\":~D,\"transitiveDependencies\":~D,\"transitiveDependents\":~D,\"blastRadius\":~D,\"instability\":~D,\"riskScore\":~D"
                     (node-internal node) (node-external node) (node-functions node)
                     (node-generics node) (node-macros node) (node-classes node)
                     (node-variables node) (node-metrics-fan-in metric)
-                    (node-metrics-fan-out metric) (node-metrics-risk-score metric))
+                    (node-metrics-fan-out metric)
+                    (node-metrics-transitive-dependencies metric)
+                    (node-metrics-transitive-dependents metric)
+                    (node-metrics-blast-radius metric)
+                    (node-metrics-instability metric)
+                    (node-metrics-risk-score metric))
             (write-char #\} stream)))
         out)
        (write-char #\, out)
@@ -279,6 +284,12 @@
        (format out "- Entrada: **~D**; saída: **~D**; grau total: **~D**~%"
                (node-metrics-fan-in metric) (node-metrics-fan-out metric)
                (node-metrics-total-degree metric))
+       (format out "- Dependências transitivas: **~D**; dependentes transitivos: **~D**~%"
+               (node-metrics-transitive-dependencies metric)
+               (node-metrics-transitive-dependents metric))
+       (format out "- Raio de impacto: **~D**; instabilidade: **~D%%**~%"
+               (node-metrics-blast-radius metric)
+               (node-metrics-instability metric))
        (format out "- Risco heurístico local: **~D/100**~%" (node-metrics-risk-score metric))
        (format out "- Participa de ciclo: **~:[não~;sim~]**~%~%"
                (pacote-em-ciclo-p analysis node))
@@ -363,8 +374,156 @@
            pathname)
       (when (probe-file temporary) (ignore-errors (delete-file temporary))))))
 
-(defun export-bundle (snapshot directory &key selected analysis)
-  "Grava SVG, JSON, DOT, Markdown, CSV e manifesto como um pacote coerente."
+(defun sarif-level (severity)
+  "Converte severidades internas para os níveis padronizados pelo SARIF."
+  (ecase severity
+    (:error "error")
+    (:warning "warning")
+    (:info "note")))
+
+(defun export-sarif (snapshot pathname &key analysis policy-report)
+  "Exporta achados arquiteturais em SARIF 2.1.0 para ferramentas de code scanning.
+
+Como o Malkuth analisa a imagem Lisp viva e não uma linha de arquivo específica,
+os resultados usam localizações lógicas de pacote. Violações de política são
+incluídas quando POLICY-REPORT é fornecido."
+  (let* ((analysis (or analysis (analyze-snapshot snapshot)))
+         (warnings (analysis-report-warnings analysis))
+         (violations (and policy-report (policy-report-violations policy-report))))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "{\"version\":\"2.1.0\",\"$schema\":\"https://json.schemastore.org/sarif-2.1.0.json\",\"runs\":[{\"tool\":{\"driver\":{\"name\":\"Malkuth\",\"semanticVersion\":\"0.7.0\",\"organization\":\"Bruno\"}},\"results\":[")
+       (let ((first t))
+         (labels ((emit-result (rule-id level message package)
+                    (unless first (write-char #\, out))
+                    (setf first nil)
+                    (format out "{\"ruleId\":")
+                    (json-string rule-id out)
+                    (format out ",\"level\":")
+                    (json-string level out)
+                    (format out ",\"message\":{\"text\":")
+                    (json-string message out)
+                    (format out "},\"locations\":[{\"logicalLocations\":[{\"name\":")
+                    (json-string (or package "ARQUITETURA") out)
+                    (format out ",\"kind\":\"module\"}]}]}")))
+           (dolist (item warnings)
+             (emit-result
+              (format nil "malkuth.~(~A~)" (analysis-warning-code item))
+              (sarif-level (analysis-warning-severity item))
+              (analysis-warning-message item)
+              (analysis-warning-package item)))
+           (dolist (item violations)
+             (emit-result
+              (format nil "malkuth.policy.~A" (policy-violation-rule-id item))
+              (sarif-level (policy-violation-severity item))
+              (policy-violation-message item)
+              (or (policy-violation-package item)
+                  (policy-violation-target item))))))
+       (format out "]}]}~%")))))
+
+(defun prometheus-label-value (value)
+  "Escapa VALUE para uso seguro em um valor de rótulo Prometheus."
+  (with-output-to-string (out)
+    (loop for character across (princ-to-string value)
+          do (case character
+               (#\\ (write-string "\\\\" out))
+               (#\" (write-string "\\\"" out))
+               (#\Newline (write-string "\\n" out))
+               (otherwise (write-char character out))))))
+
+(defun export-prometheus (snapshot pathname &key analysis)
+  "Exporta métricas arquiteturais no formato de exposição do Prometheus."
+  (let ((analysis (or analysis (analyze-snapshot snapshot))))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "# HELP malkuth_health_score Pontuacao heuristica de saude arquitetural.~%")
+       (format out "# TYPE malkuth_health_score gauge~%malkuth_health_score ~D~%"
+               (analysis-report-health-score analysis))
+       (format out "# TYPE malkuth_packages_total gauge~%malkuth_packages_total ~D~%"
+               (length (snapshot-nodes snapshot)))
+       (format out "# TYPE malkuth_dependencies_total gauge~%malkuth_dependencies_total ~D~%"
+               (length (snapshot-edges snapshot)))
+       (format out "# TYPE malkuth_cycles_total gauge~%malkuth_cycles_total ~D~%"
+               (length (analysis-report-cycles analysis)))
+       (format out "# TYPE malkuth_warnings_total gauge~%malkuth_warnings_total ~D~%"
+               (length (analysis-report-warnings analysis)))
+       (format out "# HELP malkuth_package_risk Risco local heuristico por pacote.~%")
+       (format out "# TYPE malkuth_package_risk gauge~%")
+       (format out "# TYPE malkuth_package_blast_radius gauge~%")
+       (format out "# TYPE malkuth_package_instability gauge~%")
+       (loop for node across (snapshot-nodes snapshot)
+             for metric = (metrics-for-node analysis node)
+             for name = (prometheus-label-value (node-name node))
+             for kind = (prometheus-label-value
+                         (string-downcase (symbol-name (node-kind node))))
+             do (format out "malkuth_package_risk{package=\"~A\",kind=\"~A\"} ~D~%"
+                        name kind (node-metrics-risk-score metric))
+                (format out "malkuth_package_blast_radius{package=\"~A\",kind=\"~A\"} ~D~%"
+                        name kind (node-metrics-blast-radius metric))
+                (format out "malkuth_package_instability{package=\"~A\",kind=\"~A\"} ~D~%"
+                        name kind (node-metrics-instability metric)))))))
+
+(defun mermaid-escape (value)
+  "Escapa aspas em rótulos Mermaid sem alterar o identificador técnico do nó."
+  (with-output-to-string (out)
+    (loop for character across (princ-to-string value)
+          do (case character
+               (#\" (write-string "&quot;" out))
+               (#\Newline (write-char #\Space out))
+               (otherwise (write-char character out))))))
+
+(defun export-mermaid (snapshot pathname &key analysis)
+  "Exporta o grafo de pacotes em Mermaid para documentação Markdown."
+  (let ((analysis (or analysis (analyze-snapshot snapshot)))
+        (nodes (snapshot-nodes snapshot)))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "flowchart LR~%")
+       (loop for node across nodes
+             for metric = (metrics-for-node analysis node)
+             do (format out "  p~D[\"~A\\nrisco ~D / impacto ~D\"]~%"
+                        (node-id node) (mermaid-escape (node-name node))
+                        (node-metrics-risk-score metric)
+                        (node-metrics-blast-radius metric)))
+       (loop for edge across (snapshot-edges snapshot)
+             do (format out "  p~D --> p~D~%" (edge-from edge) (edge-to edge)))
+       (format out "  classDef projeto fill:#12352f,stroke:#6cffc5,color:#eefcff~%")
+       (format out "  classDef runtime fill:#10263c,stroke:#69a9ff,color:#edf4ff~%")
+       (format out "  classDef ferramenta fill:#382a12,stroke:#ffbc52,color:#fff4d8~%")
+       (format out "  classDef biblioteca fill:#2d1f42,stroke:#bf84ff,color:#f6ecff~%")
+       (loop for node across nodes
+             do (format out "  class p~D ~A~%" (node-id node)
+                        (ecase (node-kind node)
+                          (:user "projeto") (:runtime "runtime")
+                          (:tooling "ferramenta") (:library "biblioteca"))))))))
+
+(defun export-impact-markdown (snapshot pathname &key analysis (limit 30))
+  "Exporta um ranking de impacto transitivo para orientar revisão e testes."
+  (let* ((analysis (or analysis (analyze-snapshot snapshot)))
+         (critical (critical-metrics analysis :limit limit :minimum-blast-radius 0)))
+    (atomic-write-file
+     pathname
+     (lambda (out)
+       (format out "# Impacto transitivo da arquitetura Malkuth~%~%")
+       (format out "Este ranking estima o alcance potencial de uma mudança a partir das relações `USE-PACKAGE`.~%~%")
+       (format out "| Pacote | Dependências transitivas | Dependentes transitivos | Raio de impacto | Instabilidade | Risco |~%")
+       (format out "|---|---:|---:|---:|---:|---:|~%")
+       (dolist (metric critical)
+         (format out "| `~A` | ~D | ~D | ~D | ~D% | ~D |~%"
+                 (node-metrics-name metric)
+                 (node-metrics-transitive-dependencies metric)
+                 (node-metrics-transitive-dependents metric)
+                 (node-metrics-blast-radius metric)
+                 (node-metrics-instability metric)
+                 (node-metrics-risk-score metric)))
+       (format out "~%## Interpretação~%~%")
+       (format out "Raio de impacto é a quantidade de pacotes que dependem direta ou indiretamente do pacote. Instabilidade é `fan-out / (fan-in + fan-out)` em porcentagem. Ambas são heurísticas arquiteturais e não substituem testes de impacto em tempo de execução.~%")))))
+
+(defun export-bundle (snapshot directory &key selected analysis policy-report)
+  "Grava relatórios visuais, tabulares, CI e observabilidade como um pacote coerente."
   (let* ((directory (uiop:ensure-directory-pathname
                      (merge-pathnames directory (uiop:getcwd))))
          (analysis (or analysis (analyze-snapshot snapshot)))
@@ -373,6 +532,10 @@
          (dot (merge-pathnames "malkuth.dot" directory))
          (markdown (merge-pathnames "malkuth-report.md" directory))
          (manifest (merge-pathnames "malkuth-manifest.txt" directory))
+         (sarif (merge-pathnames "malkuth.sarif" directory))
+         (prometheus (merge-pathnames "malkuth.prom" directory))
+         (mermaid (merge-pathnames "malkuth.mmd" directory))
+         (impact (merge-pathnames "malkuth-impacto.md" directory))
          (csv-paths (export-csv-bundle snapshot directory :analysis analysis))
          (packages-csv (getf csv-paths :packages-csv))
          (dependencies-csv (getf csv-paths :dependencies-csv)))
@@ -381,6 +544,10 @@
     (export-json snapshot json :analysis analysis)
     (export-dot snapshot dot :analysis analysis)
     (export-markdown snapshot markdown :analysis analysis)
+    (export-sarif snapshot sarif :analysis analysis :policy-report policy-report)
+    (export-prometheus snapshot prometheus :analysis analysis)
+    (export-mermaid snapshot mermaid :analysis analysis)
+    (export-impact-markdown snapshot impact :analysis analysis)
     (atomic-write-file
      manifest
      (lambda (out)
@@ -389,9 +556,10 @@
        (format out "fingerprint=~A~%" (snapshot-fingerprint snapshot))
        (format out "generated_at=~A~%" (iso-8601-time (snapshot-created-at snapshot)))
        (format out "health_score=~D~%" (analysis-report-health-score analysis))
-       (format out "files=malkuth.svg,malkuth.json,malkuth.dot,malkuth-report.md,malkuth-pacotes.csv,malkuth-dependencias.csv~%")))
+       (format out "files=malkuth.svg,malkuth.json,malkuth.dot,malkuth-report.md,malkuth-pacotes.csv,malkuth-dependencias.csv,malkuth.sarif,malkuth.prom,malkuth.mmd,malkuth-impacto.md~%")))
     (list :svg svg :json json :dot dot :markdown markdown :manifest manifest
-          :packages-csv packages-csv :dependencies-csv dependencies-csv)))
+          :packages-csv packages-csv :dependencies-csv dependencies-csv
+          :sarif sarif :prometheus prometheus :mermaid mermaid :impact impact)))
 
 ;;;; Exportações tabulares e comparação contra linha de base
 
@@ -420,7 +588,8 @@
      (lambda (out)
        (csv-row '("id" "nome" "papel" "internos" "externos" "simbolos"
                   "funcoes" "genericas" "macros" "classes" "variaveis"
-                  "fan_in" "fan_out" "grau_total" "risco") out)
+                  "fan_in" "fan_out" "grau_total" "dependencias_transitivas"
+                  "dependentes_transitivos" "raio_impacto" "instabilidade" "risco") out)
        (loop for node across (snapshot-nodes snapshot)
              for metric = (metrics-for-node analysis node)
              do (csv-row
@@ -433,6 +602,10 @@
                        (node-variables node) (node-metrics-fan-in metric)
                        (node-metrics-fan-out metric)
                        (node-metrics-total-degree metric)
+                       (node-metrics-transitive-dependencies metric)
+                       (node-metrics-transitive-dependents metric)
+                       (node-metrics-blast-radius metric)
+                       (node-metrics-instability metric)
                        (node-metrics-risk-score metric))
                  out))))))
 

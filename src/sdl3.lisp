@@ -62,6 +62,7 @@
 (defconstant +sc-6+ 35)
 (defconstant +sc-7+ 36)
 (defconstant +sc-8+ 37)
+(defconstant +sc-9+ 38)
 (defconstant +sc-return+ 40)
 (defconstant +sc-escape+ 41)
 (defconstant +sc-backspace+ 42)

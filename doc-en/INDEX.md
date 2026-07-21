@@ -10,6 +10,7 @@
 | [Filters and favorites](FILTERS-AND-FAVORITES.md) | Visual focus, persistence and risk threshold |
 | [Architecture policies](POLICIES.md) | Declarative rules, layers, limits and CI |
 | [Dependency paths](PATHS.md) | Shortest paths between packages and focused exports |
+| [Impact and integrations](IMPACT-AND-INTEGRATIONS.md) | Transitive impact, SARIF, Prometheus and Mermaid |
 | [History and comparison](HISTORY-AND-COMPARISON.md) | Baselines, evolution, trends and regressions |
 | [Continuous monitoring](MONITORING.md) | Cooperative monitoring of long-running Lisp images |
 | [Architecture](ARCHITECTURE.md) | Components, data flow and design decisions |

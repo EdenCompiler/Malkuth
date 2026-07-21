@@ -12,6 +12,10 @@ malkuth-report.md
 malkuth-manifest.txt
 malkuth-pacotes.csv
 malkuth-dependencias.csv
+malkuth.sarif
+malkuth.prom
+malkuth.mmd
+malkuth-impacto.md
 ```
 
 Quando há dados disponíveis, `X` também acrescenta:
@@ -80,13 +84,20 @@ pacote-<nome>.dot
 
 O Markdown reúne conteúdo, métricas, risco, participação em ciclos, dependências, dependentes e até 200 símbolos próprios. O DOT contém somente a seleção e sua vizinhança direta.
 
+## Integrações de produção
+
+- `malkuth.sarif`: achados arquiteturais em SARIF 2.1.0 com localização lógica por pacote;
+- `malkuth.prom`: saúde e métricas por pacote no formato de exposição do Prometheus;
+- `malkuth.mmd`: grafo de dependências como `flowchart LR` do Mermaid;
+- `malkuth-impacto.md`: ranking por dependentes transitivos, instabilidade e risco.
+
 ## CSV
 
-`malkuth-pacotes.csv` contém uma linha por pacote com contagens, fan-in, fan-out, grau e risco. `malkuth-dependencias.csv` contém origem, destino e peso de cada relação `USE-PACKAGE`. Os campos são protegidos por aspas e podem ser abertos em planilhas ou ferramentas de BI.
+`malkuth-pacotes.csv` contém uma linha por pacote com métricas diretas e transitivas. `malkuth-dependencias.csv` contém origem, destino e peso de cada relação `USE-PACKAGE`. Os campos são protegidos por aspas e podem ser abertos em planilhas ou ferramentas de BI.
 
 ## JSON
 
-O esquema do instantâneo continua em `1.1`. Relatórios de política, caminho, comparação e tendência possuem seus próprios esquemas versionados.
+O esquema do instantâneo é `1.2` e inclui `transitiveDependencies`, `transitiveDependents`, `blastRadius` e `instability` em cada pacote. Relatórios de política, caminho, comparação e tendência possuem seus próprios esquemas versionados.
 
 As chaves permanecem em inglês para compatibilidade com automações.
 
@@ -105,4 +116,7 @@ Artefatos são escritos em arquivos temporários vizinhos e depois substituem o 
 (malkuth.export:export-path-bundle
  instantaneo caminho #P"build/malkuth/" :direction :either)
 (malkuth.export:export-trend-bundle relatorio-tendencia #P"build/malkuth/")
+(malkuth.export:export-sarif instantaneo #P"build/malkuth/malkuth.sarif")
+(malkuth.export:export-prometheus instantaneo #P"build/malkuth/malkuth.prom")
+(malkuth.export:export-mermaid instantaneo #P"build/malkuth/malkuth.mmd")
 ```

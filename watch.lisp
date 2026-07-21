@@ -91,7 +91,7 @@
               :output-directory output
               :retention (max 1 (env-integer "MALKUTH_HISTORY_RETENTION" 50))
               :export-on-change (env-boolean "MALKUTH_EXPORT_ON_CHANGE" t))))
-      (format t "MALKUTH 0.6.0 / monitor ativo / intervalo ~,2Fs / saída ~A~%"
+      (format t "MALKUTH 0.7.0 / monitor ativo / intervalo ~,2Fs / saída ~A~%"
               interval output)
       (malkuth.monitor:run-monitor
        monitor :interval interval :iterations iterations

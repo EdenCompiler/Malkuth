@@ -1,5 +1,16 @@
 # Histórico de alterações
 
+## 0.7.0 — Impacto transitivo e integrações de produção
+
+- Consultas de dependências e dependentes transitivos com limite opcional de profundidade.
+- Métricas de raio de impacto e instabilidade para cada pacote.
+- Filtro visual `9` com `MALKUTH_IMPACT_THRESHOLD`.
+- Exportação SARIF 2.1.0 com avisos arquiteturais e violações de políticas.
+- Métricas no formato de exposição do Prometheus para monitoramento global e por pacote.
+- Exportação Mermaid do grafo de dependências para documentação Markdown.
+- Relatório dedicado de ranking de impacto transitivo.
+- Esquema JSON 1.2 e novas colunas CSV de impacto transitivo.
+
 ## 0.6.1 — Documentação bilíngue e limpeza
 
 - Documentação reorganizada em `doc-ptbr/` e `doc-en/`.

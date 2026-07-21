@@ -4,7 +4,7 @@
   :description "Observatório da imagem Common Lisp e analisador de arquitetura orientado a uso em produção."
   :author "Bruno"
   :license "MIT"
-  :version "0.6.1"
+  :version "0.7.0"
   :in-order-to ((asdf:test-op (asdf:test-op "malkuth/tests")))
   :serial t
   :components ((:file "src/package")
@@ -22,7 +22,7 @@
   :description "Interface interativa SDL3 do Malkuth."
   :author "Bruno"
   :license "MIT"
-  :version "0.6.1"
+  :version "0.7.0"
   :in-order-to ((asdf:test-op (asdf:test-op "malkuth/tests")))
   :depends-on ("malkuth/core" "cffi")
   :serial t

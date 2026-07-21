@@ -28,6 +28,9 @@
            #:node-symbol-lines #:find-node-by-name #:search-nodes #:snapshot-summary
            #:node-dependency-ids #:node-dependent-ids #:node-neighbor-ids
            #:node-dependencies #:node-dependents #:node-neighbors
+           #:reachable-node-ids
+           #:node-transitive-dependency-ids #:node-transitive-dependent-ids
+           #:node-transitive-dependencies #:node-transitive-dependents
            #:shortest-dependency-path-ids #:shortest-dependency-path
            #:dependency-path-edge-p
            #:snapshot-fingerprint #:validate-snapshot))
@@ -50,7 +53,9 @@
   (:export #:node-metrics #:node-metrics-node-id #:node-metrics-name
            #:node-metrics-fan-in #:node-metrics-fan-out
            #:node-metrics-total-degree #:node-metrics-symbols
-           #:node-metrics-risk-score
+           #:node-metrics-transitive-dependencies #:node-metrics-transitive-dependents
+           #:node-metrics-blast-radius #:node-metrics-instability
+           #:node-metrics-risk-score #:critical-metrics
            #:analysis-warning #:analysis-warning-severity
            #:analysis-warning-code #:analysis-warning-package
            #:analysis-warning-message
@@ -112,6 +117,8 @@
   (:use #:cl #:malkuth.model #:malkuth.analysis #:malkuth.policy #:malkuth.history)
   (:import-from #:malkuth.svg #:export-svg)
   (:export #:export-json #:export-dot #:export-markdown #:export-bundle
+           #:export-sarif #:export-prometheus #:export-mermaid
+           #:export-impact-markdown
            #:export-packages-csv #:export-dependencies-csv #:export-csv-bundle
            #:export-comparison-json #:export-comparison-markdown
            #:export-comparison-bundle
@@ -148,7 +155,7 @@
            #:+sc-o+ #:+sc-w+ #:+sc-a+ #:+sc-s+ #:+sc-d+ #:+sc-q+ #:+sc-e+
            #:+sc-b+ #:+sc-c+ #:+sc-f+ #:+sc-i+ #:+sc-l+ #:+sc-m+ #:+sc-n+ #:+sc-t+ #:+sc-u+ #:+sc-v+ #:+sc-y+ #:+sc-z+
            #:+sc-j+ #:+sc-k+ #:+sc-g+ #:+sc-x+ #:+sc-f5+
-           #:+sc-1+ #:+sc-2+ #:+sc-3+ #:+sc-4+ #:+sc-5+ #:+sc-6+ #:+sc-7+ #:+sc-8+
+           #:+sc-1+ #:+sc-2+ #:+sc-3+ #:+sc-4+ #:+sc-5+ #:+sc-6+ #:+sc-7+ #:+sc-8+ #:+sc-9+
            #:+sc-pageup+ #:+sc-pagedown+ #:+sc-up+ #:+sc-down+
            #:+sc-left-control+ #:+sc-right-control+ #:+mouse-left+))
 
@@ -168,6 +175,8 @@
                 #:analysis-warning-message #:analysis-warning-severity
                 #:node-metrics-name #:node-metrics-fan-in
                 #:node-metrics-fan-out #:node-metrics-total-degree
+                #:node-metrics-transitive-dependencies #:node-metrics-transitive-dependents
+                #:node-metrics-blast-radius #:node-metrics-instability
                 #:node-metrics-risk-score
                 #:metrics-for-node #:compare-snapshots #:compare-architectures
                 #:architecture-diff-health-delta #:architecture-diff-warning-delta

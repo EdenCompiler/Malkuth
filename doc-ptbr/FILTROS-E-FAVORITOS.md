@@ -11,6 +11,10 @@ Os filtros alteram somente o que é desenhado e percorrido pela navegação. O i
 | `3` | Risco | Exibe pacotes cujo risco local alcança o limiar configurado |
 | `4` | Favoritos | Exibe pacotes marcados pelo usuário |
 | `5` | Vizinhança | Exibe seleção, dependências e dependentes diretos |
+| `6` | Alterados | Exibe pacotes adicionados ou alterados desde a linha de base |
+| `7` | Violações | Exibe pacotes envolvidos em violações de políticas |
+| `8` | Caminho | Exibe os pacotes da rota arquitetural ativa |
+| `9` | Impacto | Exibe pacotes acima do limiar de dependentes transitivos |
 
 O pacote selecionado permanece visível mesmo quando não satisfaz o filtro. Isso impede a perda de contexto durante a troca de modos.
 
@@ -45,3 +49,13 @@ Esse valor não modifica a pontuação global de saúde nem as regras do analisa
 ## Alterados desde a linha de base
 
 Pressione `6` para mostrar pacotes adicionados ou com contagens alteradas desde a linha de base. É necessário capturar a base com `B` ou possuir `malkuth-linha-de-base.sexp` no diretório de saída. Pacotes alterados recebem um anel magenta. Pacotes removidos aparecem no painel `T`, mas não podem ser desenhados porque já não existem no instantâneo atual.
+
+## Limiar de impacto transitivo
+
+O filtro `9` usa o raio de impacto do pacote: a quantidade de pacotes que dependem direta ou indiretamente dele. Configure o mínimo com:
+
+```bash
+MALKUTH_IMPACT_THRESHOLD=10 sbcl --script run.lisp
+```
+
+O padrão é `5`. O pacote selecionado continua visível mesmo abaixo do limiar.

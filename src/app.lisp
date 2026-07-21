@@ -58,6 +58,9 @@
   (view-filter :all :type keyword)
   (inspector-tab :symbols :type keyword)
   (risk-threshold 20 :type fixnum)
+  ;; O limiar de impacto controla apenas o filtro visual de pacotes críticos.
+  ;; O valor representa a quantidade mínima de dependentes transitivos.
+  (impact-threshold 5 :type fixnum)
   (favorites (make-hash-table :test #'equal))
   favorites-path
   (inspector-offset 0 :type fixnum)
@@ -110,7 +113,8 @@
     (:neighbors "VIZINHANÇA")
     (:changed "ALTERADOS")
     (:violations "VIOLAÇÕES")
-    (:path "CAMINHO")))
+    (:path "CAMINHO")
+    (:impact "IMPACTO")))
 
 (defun inspector-tab-name (tab)
   "Nome legível da aba ativa do inspetor."
@@ -245,7 +249,10 @@ perca o contexto ao alternar modos."
                             :test #'=))
         (:changed (changed-package-p state node))
         (:violations (policy-violation-package-p state node))
-        (:path (dependency-path-node-p state node)))))
+        (:path (dependency-path-node-p state node))
+        (:impact (>= (node-metrics-blast-radius
+                      (metrics-for-node (app-state-analysis state) node))
+                     (app-state-impact-threshold state))))))
 
 (defun display-nodes (state)
   "Lista os nós aceitos pelo filtro atual em ordem de identificador."
@@ -849,6 +856,8 @@ perca o contexto ao alternar modos."
     (if (app-state-dependency-path state)
         (set-view-filter! state :path)
         (flash-status state "O FILTRO CAMINHO EXIGE UMA ORIGEM E UM DESTINO" 3600)))
+  (when (key-edge-p state malkuth.sdl3:+sc-9+)
+    (set-view-filter! state :impact))
   (when (key-edge-p state malkuth.sdl3:+sc-o+)
     (setf (app-state-auto-orbit-p state) (not (app-state-auto-orbit-p state)))
     (flash-status state (if (app-state-auto-orbit-p state)
@@ -887,7 +896,8 @@ perca o contexto ao alternar modos."
           (export-bundle (app-state-snapshot state)
                          (app-state-export-directory state)
                          :selected (selected-node state)
-                         :analysis (app-state-analysis state))
+                         :analysis (app-state-analysis state)
+                         :policy-report (app-state-policy-report state))
           (when (app-state-policy-report state)
             (export-policy-bundle (app-state-policy-report state)
                                   (app-state-export-directory state)))
@@ -1278,7 +1288,7 @@ então solicita o encerramento da aplicação."
                            :color '(255 214 112 255)))
     (when (> h 715)
       (text renderer (+ x 20) (+ y 674)
-            (fit-text "1-8 FILTROS / M-N CAMINHO" (- w 40) :scale 1.02)
+            (fit-text "1-9 FILTROS / M-N CAMINHO" (- w 40) :scale 1.02)
             :scale 1.02 :color +accent+)
       (text renderer (+ x 20) (+ y 701)
             (fit-text "T EVOLUÇÃO / Y EXPORTA COMPARAÇÃO" (- w 40) :scale 1.02)
@@ -1683,7 +1693,9 @@ então solicita o encerramento da aplicação."
           (incf next-x 10))
         (when (and (> w 390) (< next-x (- (+ x w) 130)))
           (badge renderer next-x (+ y 137)
-                 (format nil "RISCO ~D" (node-metrics-risk-score metric))
+                 (format nil "RISCO ~D / IMPACTO ~D"
+                         (node-metrics-risk-score metric)
+                         (node-metrics-blast-radius metric))
                  :scale 1.0
                  :foreground (if (>= (node-metrics-risk-score metric)
                                      (app-state-risk-threshold state))
@@ -1782,7 +1794,7 @@ então solicita o encerramento da aplicação."
       (search-box-geometry width)
     (declare (ignore search-y search-width search-height))
     (text renderer 27 56
-          (fit-text "0.6.0 / OBSERVATÓRIO DA ARQUITETURA LISP"
+          (fit-text "0.7.0 / OBSERVATÓRIO DA ARQUITETURA LISP"
                     (- search-x 54.0d0) :scale 1.12)
           :scale 1.12 :color +text-muted+))
   (let* ((implementation (format nil "~A ~A"
@@ -1931,7 +1943,7 @@ então solicita o encerramento da aplicação."
          (x (/ (- width w) 2.0d0))
          (y (/ (- height h) 2.0d0)))
     (panel renderer x y w h :raised t :accent +accent-dim+)
-    (text renderer (+ x 32) (+ y 26) "GUIA DO MALKUTH 0.6.0"
+    (text renderer (+ x 32) (+ y 26) "GUIA DO MALKUTH 0.7.0"
           :scale 1.92 :color +accent+)
     (text renderer (+ x 32) (+ y 66)
           (fit-text "FILTRE, INVESTIGUE, FAVORITE E EXPORTE A ARQUITETURA DA IMAGEM ATIVA"
@@ -1942,7 +1954,7 @@ então solicita o encerramento da aplicação."
           :scale 1.32 :color +text-primary+)
     (loop for (number line) in
           '(("1" "PRESSIONE / OU CTRL+F E DIGITE PARTE DO NOME PARA ABRIR UM PACOTE")
-            ("2" "USE 1-8 PARA FILTRAR PROJETO, RISCO, VIOLAÇÕES OU CAMINHOS")
+            ("2" "USE 1-9 PARA FILTRAR PROJETO, RISCO, IMPACTO, VIOLAÇÕES OU CAMINHOS")
             ("3" "ALTERNE O INSPETOR COM I E EXPORTE A SELEÇÃO COM C"))
           for row-y from (+ y 162) by 47
           do (badge renderer (+ x 32) (- row-y 9) number
@@ -1960,8 +1972,8 @@ então solicita o encerramento da aplicação."
            (right (+ left column-w column-gap)))
       (help-row renderer left (+ y 378) "/" "BUSCA DE PACOTES"
                 "DIGITAR, NAVEGAR COM SETAS E ABRIR COM ENTER" column-w)
-      (help-row renderer left (+ y 438) "1-8" "FILTROS DO MAPA"
-                "TODOS, PROJETO, RISCO, FAVORITOS, ALTERADOS, POLÍTICAS E ROTA" column-w)
+      (help-row renderer left (+ y 438) "1-9" "FILTROS DO MAPA"
+                "TODOS, PROJETO, RISCO, FAVORITOS, ALTERADOS, POLÍTICAS, ROTA E IMPACTO" column-w)
       (help-row renderer left (+ y 498) "M/N" "CAMINHO ENTRE PACOTES"
                 "MARCAR A ORIGEM, SELECIONAR DESTINO E CALCULAR A MENOR ROTA" column-w)
       (help-row renderer left (+ y 558) "L" "POLÍTICAS DO PROJETO"
@@ -2031,14 +2043,16 @@ então solicita o encerramento da aplicação."
                        (include-empty nil) (export-directory #P"output/")
                        (auto-orbit t) package-predicate user-package-predicate
                        (include-dependencies nil) (risk-threshold 20)
+                       (impact-threshold 5)
                        (history-retention 20) initial-search policy-file
                        (initial-panel :overview))
   "Executa o observatório interativo da imagem ativa do Malkuth.
 
 MAX-FRAMES atende aos testes de fumaça. EXPORT-DIRECTORY recebe relatórios e
 favoritos e histórico. RISK-THRESHOLD controla o filtro visual de risco sem
-alterar a pontuação arquitetural calculada pelo núcleo. HISTORY-RETENTION limita
-a quantidade de fotografias rotativas. INITIAL-SEARCH abre a caixa já
+alterar a pontuação arquitetural calculada pelo núcleo. IMPACT-THRESHOLD define
+quantos dependentes transitivos tornam um pacote visível no filtro de impacto.
+HISTORY-RETENTION limita a quantidade de fotografias rotativas. INITIAL-SEARCH abre a caixa já
 preenchida. POLICY-FILE habilita regras arquiteturais declarativas. INITIAL-PANEL
 escolhe :OVERVIEW, :DIAGNOSTICS, :CHANGES ou :POLICY, facilitando também
 inicializadores e testes visuais."
@@ -2054,6 +2068,7 @@ inicializadores e testes visuais."
                                 :include-dependencies-p include-dependencies
                                 :export-directory (pathname export-directory)
                                 :risk-threshold (max 0 (min 100 risk-threshold))
+                                :impact-threshold (max 0 impact-threshold)
                                 :history-retention (max 1 history-retention)
                                 :policy-file (and policy-file (pathname policy-file))
                                 :auto-orbit-p auto-orbit)))

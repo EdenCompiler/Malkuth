@@ -1,21 +1,26 @@
-# Malkuth 0.6.1 — English
+# Malkuth
+
+> **Languages / Idiomas:** [English](#english) · [Português do Brasil](#português-do-brasil)
+
+# English
 
 **Common Lisp image observatory, package-level architecture analyzer, and regression monitor.**
+
 
 > Documentation: [English](doc-en/INDEX.md) · [Português (Brasil)](doc-ptbr/INDICE.md)
 
 Malkuth inspects the running Lisp process and turns its package structure into a navigable map. Each package becomes a node, `USE-PACKAGE` relationships become edges, and owned symbols, functions, macros, classes, generic functions, and variables are classified. The same snapshot powers the SDL3 interface, architecture analysis, declarative policies, history, monitoring, and CI-ready reports.
 
-![Malkuth interface](assets/interface.png)
 
-## What is new in 0.6.1
+## What is new in 0.7.0
 
-- documentation reorganized into `doc-en/` and `doc-ptbr/`;
-- complete English and Brazilian Portuguese documentation trees;
-- bilingual root README with equivalent project coverage in both languages;
-- source-code comment audit to keep comments in Brazilian Portuguese;
-- removal of the obsolete `docs/` tree and duplicated documentation assets;
-- documentation links validated after the reorganization.
+- transitive dependency and dependent analysis for every package;
+- blast-radius and instability metrics to estimate architectural change impact;
+- visual filter `9` for packages above a configurable impact threshold;
+- SARIF 2.1.0 export for CI and code-scanning pipelines;
+- Prometheus exposition-format metrics for dashboards and monitoring;
+- Mermaid dependency graphs for Markdown-native documentation;
+- dedicated impact ranking report, JSON schema 1.2, and expanded CSV impact columns.
 
 ## Main capabilities
 
@@ -23,14 +28,14 @@ Malkuth inspects the running Lisp process and turns its package structure into a
 - three-dimensional package and dependency map;
 - Unicode text search with direct package selection;
 - symbol and direct-relationship inspection;
-- fan-in, fan-out, connectivity, local risk, and heuristic health metrics;
+- fan-in/out, transitive reachability, blast radius, instability, local risk, and heuristic health metrics;
 - strongly connected component and cycle detection;
 - persistent baseline, rotating history, and regression comparison;
 - versionable declarative architecture policies;
 - shortest dependency paths between packages;
 - continuous monitoring of the same long-running Lisp image;
 - package-prefix scoping with optional direct boundary dependencies;
-- atomic SVG, JSON, DOT, Markdown, and CSV exports;
+- atomic SVG, JSON, DOT, Markdown, CSV, SARIF, Prometheus, and Mermaid exports;
 - portable core that does not require SDL3 or CFFI.
 
 ## Requirements
@@ -86,6 +91,7 @@ sbcl --script render-svg.lisp
 | `6` | Show packages changed since baseline |
 | `7` | Show packages that violate policies |
 | `8` | Show only the active architecture path |
+| `9` | Show packages above the transitive impact threshold |
 | `F` | Add/remove favorite |
 | `M` | Mark current package as path source |
 | `N` | Compute the shortest path to the selected package |
@@ -160,6 +166,20 @@ See [Architecture policies](doc-en/POLICIES.md).
 The interactive route uses undirected connectivity to answer “how are these subsystems connected?”. The API also supports outgoing and incoming directed paths.
 
 See [Dependency paths](doc-en/PATHS.md).
+
+## Impact analysis and production integrations
+
+Malkuth computes direct and transitive dependency reachability for every package. The **blast radius** is the number of packages that depend directly or indirectly on a package; **instability** is `fan-out / (fan-in + fan-out)` expressed as a percentage.
+
+Press `9` to isolate packages whose blast radius reaches `MALKUTH_IMPACT_THRESHOLD` (default `5`):
+
+```bash
+MALKUTH_IMPACT_THRESHOLD=10 sbcl --script run.lisp
+```
+
+A complete export now includes `malkuth.sarif`, `malkuth.prom`, `malkuth.mmd`, and `malkuth-impacto.md`. SARIF exposes architecture findings to code-scanning pipelines, Prometheus supports operational dashboards, Mermaid embeds the dependency graph in Markdown documentation, and the impact report ranks packages by transitive reach.
+
+See [Impact and integrations](doc-en/IMPACT-AND-INTEGRATIONS.md).
 
 ## History and trends
 
@@ -242,10 +262,10 @@ Embedded monitor:
 
 ```text
 src/model.lisp        reflection, search, relationships, paths, validation
-src/analysis.lisp     metrics, cycles, comparison, trends
+src/analysis.lisp     metrics, transitive impact, cycles, comparison, trends
 src/history.lisp      snapshot persistence and retention
 src/policy.lisp       declarative architecture policies
-src/export.lisp       global/focused reports, policies, paths, trends
+src/export.lisp       reports, SARIF, Prometheus, Mermaid, policies, paths, trends
 src/monitor.lisp      cooperative image monitoring
 src/layout.lisp       deterministic 3D layout
 src/svg.lisp          self-contained SVG dashboard
@@ -257,7 +277,6 @@ watch.lisp            continuous headless monitor
 run.lisp              interactive launcher
 doc-en/               English documentation
 doc-ptbr/             Brazilian Portuguese documentation
-assets/                shared non-language-specific assets
 ```
 
 ## Validation
@@ -286,7 +305,7 @@ MIT. The official legal text is in [LICENSE](LICENSE).
 
 ---
 
-# Malkuth 0.6.1 — Português (Brasil)
+# Português do Brasil
 
 **Observatório da imagem Common Lisp, analisador de arquitetura por pacotes e monitor de regressões.**
 
@@ -294,16 +313,16 @@ MIT. The official legal text is in [LICENSE](LICENSE).
 
 O Malkuth examina o processo Lisp em execução e transforma seus pacotes em um mapa navegável. Cada pacote vira um nó; relações de `USE-PACKAGE` viram arestas; símbolos, funções, macros, classes e variáveis são classificados. A mesma fotografia alimenta a interface SDL3, análises arquiteturais, políticas declarativas, histórico e relatórios para CI.
 
-![Interface do Malkuth](assets/interface.png)
 
-## Novidades da versão 0.6.1
+## Novidades da versão 0.7.0
 
-- documentação reorganizada em `doc-ptbr/` e `doc-en/`;
-- documentação completa em português do Brasil e em inglês;
-- README bilíngue com duas metades completas e equivalentes;
-- auditoria dos comentários do código-fonte para mantê-los em pt-BR;
-- remoção da árvore antiga `docs/` e de artefatos documentais duplicados;
-- validação dos links após a reorganização.
+- análise de dependências e dependentes transitivos para cada pacote;
+- métricas de raio de impacto e instabilidade para estimar alcance de mudanças;
+- filtro visual `9` para pacotes acima de um limiar configurável de impacto;
+- exportação SARIF 2.1.0 para CI e plataformas de code scanning;
+- métricas no formato de exposição do Prometheus para painéis e monitoramento;
+- grafo Mermaid para documentação Markdown nativa;
+- relatório dedicado de impacto, esquema JSON 1.2 e novas colunas de impacto nos CSVs.
 
 ## Capacidades principais
 
@@ -311,14 +330,14 @@ O Malkuth examina o processo Lisp em execução e transforma seus pacotes em um 
 - mapa tridimensional de pacotes e dependências;
 - busca textual Unicode e seleção direta de pacotes;
 - inspeção de símbolos e relações diretas;
-- métricas de entrada, saída, conectividade e risco;
+- métricas de entrada/saída, alcance transitivo, raio de impacto, instabilidade e risco;
 - detecção de ciclos por componentes fortemente conexos;
 - linha de base, histórico rotativo e comparação de regressões;
 - políticas arquiteturais versionáveis para interface e CI;
 - menor caminho de conectividade entre pacotes;
 - monitoramento contínuo da própria imagem Lisp;
 - escopo por prefixos de pacotes;
-- exportações atômicas SVG, JSON, DOT, Markdown e CSV;
+- exportações atômicas SVG, JSON, DOT, Markdown, CSV, SARIF, Prometheus e Mermaid;
 - núcleo utilizável sem SDL3 e CFFI.
 
 ## Requisitos
@@ -372,6 +391,7 @@ sbcl --script render-svg.lisp
 | `6` | Mostrar pacotes alterados desde a linha de base |
 | `7` | Mostrar pacotes que violam políticas |
 | `8` | Mostrar somente a rota arquitetural ativa |
+| `9` | Mostrar pacotes acima do limiar de impacto transitivo |
 | `F` | Adicionar ou remover favorito |
 | `M` | Marcar o pacote atual como origem do caminho |
 | `N` | Calcular a menor rota até o pacote selecionado |
@@ -446,6 +466,20 @@ Consulte [Políticas arquiteturais](doc-ptbr/POLITICAS.md).
 A rota interativa usa conectividade não orientada para responder “como estes subsistemas estão ligados?”. A API também suporta caminhos orientados de saída e entrada.
 
 Consulte [Caminhos de dependência](doc-ptbr/CAMINHOS.md).
+
+## Análise de impacto e integrações de produção
+
+O Malkuth calcula o alcance de dependências e dependentes diretos e transitivos de cada pacote. O **raio de impacto** é a quantidade de pacotes que dependem direta ou indiretamente de um pacote; **instabilidade** é `fan-out / (fan-in + fan-out)` em porcentagem.
+
+Pressione `9` para isolar pacotes cujo raio de impacto alcança `MALKUTH_IMPACT_THRESHOLD` (padrão `5`):
+
+```bash
+MALKUTH_IMPACT_THRESHOLD=10 sbcl --script run.lisp
+```
+
+O pacote completo agora inclui `malkuth.sarif`, `malkuth.prom`, `malkuth.mmd` e `malkuth-impacto.md`. SARIF integra achados arquiteturais a pipelines de code scanning, Prometheus alimenta painéis operacionais, Mermaid incorpora o grafo em Markdown e o relatório de impacto ordena os pacotes pelo alcance transitivo.
+
+Consulte [Impacto e integrações](doc-ptbr/IMPACTO-E-INTEGRACOES.md).
 
 ## Histórico e tendências
 
@@ -527,10 +561,10 @@ Monitor embutido:
 
 ```text
 src/model.lisp        reflexão, busca, relações, caminhos e validação
-src/analysis.lisp     métricas, ciclos, comparação e tendências
+src/analysis.lisp     métricas, impacto transitivo, ciclos, comparação e tendências
 src/history.lisp      persistência e retenção de instantâneos
 src/policy.lisp       regras arquiteturais declarativas
-src/export.lisp       relatórios globais, focados, políticas, rotas e tendências
+src/export.lisp       relatórios, SARIF, Prometheus, Mermaid, políticas, rotas e tendências
 src/monitor.lisp      monitoramento cooperativo da imagem
 src/layout.lisp       arranjo tridimensional determinístico
 src/svg.lisp          painel SVG autocontido
@@ -540,6 +574,8 @@ src/app.lisp          interface, busca, filtros, políticas e rotas
 analyze.lisp          execução sem interface e políticas de CI
 watch.lisp            monitor contínuo sem interface
 run.lisp              inicializador da interface
+doc-en/               documentação em inglês
+doc-ptbr/             documentação em português do Brasil
 ```
 
 ## Validação

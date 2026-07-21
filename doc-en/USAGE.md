@@ -7,7 +7,7 @@
 3. Optionally load an architecture policy file.
 4. Start Malkuth or run headless analysis.
 5. Press `/` or `Ctrl+F` to locate a package.
-6. Use filters `2`, `3` and `7` to focus on project code, risk and policy violations.
+6. Use filters `2`, `3`, `7` and `9` to focus on project code, risk, policy violations and transitive impact.
 7. Select a package and press `I` to switch between symbols and dependencies.
 8. Press `V` to isolate the direct neighborhood and `F` to favorite important packages.
 9. To explain connectivity, mark a source with `M`, select a target and press `N`.
@@ -64,6 +64,6 @@ The **Symbols** tab lists owned symbols by category. The **Dependencies** tab se
 
 ## Pagination and navigation
 
-`Page Up` and `Page Down` scroll the active inspector tab. `J`, `K` and `Tab` navigate packages accepted by the current visual filter.
+`Page Up` and `Page Down` scroll the active inspector tab. `J`, `K` and `Tab` navigate packages accepted by the current visual filter. Filter `9` isolates packages whose blast radius reaches `MALKUTH_IMPACT_THRESHOLD`.
 
 See [Policies](POLICIES.md), [Paths](PATHS.md), [History](HISTORY-AND-COMPARISON.md), [Search](SEARCH.md) and [Filters](FILTERS-AND-FAVORITES.md).
